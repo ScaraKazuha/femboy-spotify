@@ -810,6 +810,36 @@ img { display: block; }
 
 .custom-card { width: 440px; }
 
+.bell { position: relative; }
+.bell-dot {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pink-2);
+  box-shadow: 0 0 0 2px var(--bg);
+  animation: beat 1.4s ease-in-out infinite;
+}
+.update-card { width: 440px; text-align: center; }
+.update-card h2 { margin: 6px 0 6px; }
+.update-card p { color: var(--plum-2); margin: 0 0 12px; }
+.update-notes {
+  text-align: left;
+  white-space: pre-wrap;
+  font: 14px var(--font);
+  color: var(--plum-2);
+  background: #fff;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  max-height: 160px;
+  overflow-y: auto;
+  margin: 0 0 16px;
+}
+.update-card .custom-actions { justify-content: center; }
+
 .nodevice-card { width: 440px; text-align: center; }
 .nodevice-card h2 { margin: 6px 0 8px; }
 .nodevice-card p { color: var(--plum-2); line-height: 1.45; margin: 0 0 18px; }

@@ -226,11 +226,59 @@ async fn transfer(state: State<'_, AppState>, device: String) -> CmdResult<()> {
     state.core().await?.remote.transfer(&device).await.map_err(err)
 }
 
+// ---------- auto-update from GitHub Releases ----------
+
+#[derive(serde::Serialize)]
+struct UpdateInfo {
+    current: String,
+    version: String,
+    notes: Option<String>,
+}
+
+/// Looks at the latest GitHub release; `Some` when a newer signed version exists.
+#[tauri::command]
+async fn check_update(app: AppHandle) -> CmdResult<Option<UpdateInfo>> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app.updater().map_err(err)?.check().await.map_err(err)?;
+    if let Some(u) = &update {
+        log_line(&format!("update: {} -> {} available", u.current_version, u.version));
+    }
+    Ok(update.map(|u| UpdateInfo {
+        current: u.current_version.clone(),
+        version: u.version.clone(),
+        notes: u.body.clone(),
+    }))
+}
+
+/// Downloads the update (signature checked), installs it and restarts the app.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> CmdResult<()> {
+    use tauri_plugin_updater::UpdaterExt;
+    let Some(update) = app.updater().map_err(err)?.check().await.map_err(err)? else {
+        return Err("you already have the newest version ♡".into());
+    };
+    log_line(&format!("update: installing {}", update.version));
+    let progress = app.clone();
+    let mut done: u64 = 0;
+    update
+        .download_and_install(
+            move |chunk, total| {
+                done += chunk as u64;
+                let _ = progress.emit("update-progress", (done, total));
+            },
+            || {},
+        )
+        .await
+        .map_err(err)?;
+    app.restart();
+}
+
 fn main() {
     auth::init_runtime();
     auth::init_file_log();
     log_line(concat!("femboy spotify ", env!("CARGO_PKG_VERSION"), " started"));
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             init,
@@ -253,6 +301,8 @@ fn main() {
             set_option,
             set_volume,
             transfer,
+            check_update,
+            install_update,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start femboy spotify");

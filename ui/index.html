@@ -29,7 +29,7 @@
         </label>
       </div>
       <div class="top-right" data-tauri-drag-region>
-        <button class="icon-btn" id="btn-bell" title="notifications" data-icon="bell"></button>
+        <button class="icon-btn bell" id="btn-bell" title="notifications" data-icon="bell"><span class="bell-dot hidden" id="bell-dot"></span></button>
         <button class="icon-btn" id="btn-friends" title="friends" data-icon="users"></button>
         <button class="avatar" id="btn-avatar" title="account"><img id="avatar-img" alt=""></button>
         <div class="win-controls">
@@ -160,6 +160,20 @@
       <p>femboy spotify is a remote: the music plays in the official Spotify app.
         Open Spotify on your computer or phone (no need to press play), then click a song here again.</p>
       <button class="pink-btn" id="nodevice-ok">okay!</button>
+    </div>
+  </div>
+
+  <!-- auto-update -->
+  <div class="overlay hidden" id="update">
+    <div class="card update-card">
+      <img class="login-heart" src="art/headphones.png" alt="">
+      <h2>new version ♡</h2>
+      <p id="update-text"></p>
+      <pre class="update-notes hidden" id="update-notes"></pre>
+      <div class="custom-actions">
+        <button class="chip" id="update-later">later</button>
+        <button class="pink-btn" id="update-go">update &amp; restart</button>
+      </div>
     </div>
   </div>
 

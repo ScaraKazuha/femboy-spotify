@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Femboy Spotify",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "dev.scarakazuha.femboyspotify",
   "build": {
     "frontendDist": "ui"
@@ -27,6 +27,18 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": ["icons/icon.png", "icons/icon.ico"]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdFNEFFMEUwQTgwQTA0Q0UKUldUT0JBcW80T0JLZnZ1T1pYemNKdTF1eE91Tnd6N2ZySDBvTVRJWG9vdHcxaWFlS25PMVVCSFMK",
+      "endpoints": [
+        "https://github.com/ScaraKazuha/femboy-spotify/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

@@ -814,8 +814,51 @@ $('btn-home').onclick = () => go({ name: 'home' });
 $('btn-browse').onclick = () => go({ name: 'library' });
 $('btn-back').onclick = goBack;
 $('btn-forward').onclick = goForward;
-$('btn-menu').onclick = () => toast('femboy spotify v0.2 ♡ made with Rust & love');
-$('btn-bell').onclick = () => toast('no new notifications ♡');
+$('btn-menu').onclick = async () => {
+  const v = DEMO ? 'demo' : await TAURI.app.getVersion().catch(() => '?');
+  toast(`femboy spotify v${v} ♡ made with Rust & love`);
+};
+$('btn-bell').onclick = () => (S.update ? showUpdate() : toast('no new notifications ♡'));
+
+/* ───────────── auto-update (GitHub Releases) ───────────── */
+
+async function checkForUpdate() {
+  try {
+    const info = await invoke('check_update');
+    if (!info) return;
+    const isNew = S.update?.version !== info.version;
+    S.update = info;
+    $('bell-dot').classList.remove('hidden');
+    if (isNew) toast(`femboy spotify ${info.version} is out ♡ click the bell`);
+  } catch (e) {
+    console.warn('update check failed', e); // offline or no release yet: stay quiet
+  }
+}
+
+function showUpdate() {
+  const u = S.update;
+  $('update-text').textContent = `version ${u.version} is ready (you have ${u.current})`;
+  $('update-notes').textContent = u.notes || '';
+  $('update-notes').classList.toggle('hidden', !u.notes);
+  $('update').classList.remove('hidden');
+}
+
+$('update-later').onclick = () => $('update').classList.add('hidden');
+$('update-go').onclick = async () => {
+  const btn = $('update-go');
+  btn.disabled = true;
+  btn.textContent = 'downloading...';
+  try {
+    await invoke('install_update'); // the app restarts when this succeeds
+  } catch (e) {
+    toast(`update failed: ${e}`);
+    btn.disabled = false;
+    btn.textContent = 'update & restart';
+  }
+};
+listen('update-progress', ([done, total]) => {
+  if (total) $('update-go').textContent = `downloading ${Math.round((done / total) * 100)}%`;
+});
 $('btn-friends').onclick = () => toast('friend activity is coming soon~');
 $('btn-avatar').onclick = () => toast(S.me ? `logged in as ${S.me.name} ♡ (ribbon in the sidebar = log out)` : 'not logged in');
 
@@ -994,6 +1037,8 @@ async function start() {
   render();
   renderNow();
   setInterval(tick, 250);
+  checkForUpdate();
+  setInterval(checkForUpdate, 6 * 60 * 60 * 1000);
   try {
     const ok = await invoke('init');
     if (ok) await afterLogin();
@@ -1032,6 +1077,7 @@ async function demoInvoke(cmd, args = {}) {
     case 'lyrics': return [{ start_ms: 0, words: 'this is a demo, no real lyrics here' }, { start_ms: 4000, words: 'log in with Spotify to hear the music' }, { start_ms: 8000, words: 'pink pink pink ♡' }, { start_ms: 12000, words: 'la la la~' }];
     // a pretend Spotify Connect device
     case 'remote_state': return demoState();
+    case 'check_update': return location.search.includes('update') ? { current: '0.3.0', version: '0.4.0', notes: '- demo update notes\n- even more pink ♡' } : null;
     case 'play_dj': {
       demoRemote.active = args.device || demoRemote.active || demoDevices()[0].id;
       demoRemote.context = DJ_URI;

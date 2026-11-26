@@ -1,0 +1,49 @@
+# Builds the Windows installer and publishes a GitHub Release when a version tag
+# (e.g. v0.3.0) is pushed. The release includes latest.json + signatures, which the
+# app's built-in updater reads to update itself.
+#
+# Needs two repository secrets (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY           contents of the private update-signing key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (empty if generated with --ci)
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tauriScript: npx --yes @tauri-apps/cli@2
+          tagName: ${{ github.ref_name }}
+          releaseName: "Femboy Spotify ${{ github.ref_name }}"
+          releaseBody: |
+            Download **Femboy Spotify_*_x64-setup.exe** below and run it ♡
+            After that the app updates itself (watch the bell in the top bar).
+
+            You need Spotify Premium and the Spotify app open on any device: femboy spotify is a pretty remote for it.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
