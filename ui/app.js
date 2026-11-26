@@ -322,6 +322,7 @@ function renderNow() {
 
 function renderPlayState() {
   setIcon($('btn-play'), S.playing ? 'pause' : 'play');
+  $('btn-panel').classList.toggle('vibing', S.playing && !S.buffering);
   $('btn-shuffle').classList.toggle('active', S.shuffle);
   setIcon($('btn-repeat'), S.repeat === 'one' ? 'repeat-one' : 'repeat');
   $('btn-repeat').classList.toggle('active', S.repeat !== 'off');

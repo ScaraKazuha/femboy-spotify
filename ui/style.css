@@ -654,6 +654,78 @@ img { display: block; }
 .extras .ring { width: 44px; height: 44px; }
 .bar.volume { flex: 0 0 110px; margin: 0 6px; }
 
+/* the little headphones buddy (shows / hides the now-playing panel) */
+.buddy {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  margin-right: 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.buddy::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, #ffe4f0, var(--pink-soft));
+  border: 2.5px solid var(--plum);
+  opacity: 0;
+  transform: scale(.85);
+  transition: opacity .2s, transform .2s;
+}
+.buddy.active::before { opacity: 1; transform: scale(1); }
+.buddy img {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  transform-origin: 50% 88%;
+  filter: drop-shadow(0 2px 3px rgba(110, 53, 99, .3));
+  pointer-events: none;
+  animation: buddy-idle 3.4s ease-in-out infinite;
+}
+.buddy:hover img { animation: buddy-wiggle .55s ease-in-out; }
+.buddy:active img { transform: scale(.9); }
+.buddy.vibing img { animation: buddy-bop .5s ease-in-out infinite alternate; }
+
+/* floating notes while music plays */
+.buddy.vibing::after {
+  content: "♪";
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--pink-2);
+  text-shadow: 0 1px 0 #fff;
+  pointer-events: none;
+  animation: note-float 1.6s ease-out infinite;
+}
+
+@keyframes buddy-idle {
+  0%, 100% { transform: rotate(-3deg) translateY(0); }
+  50% { transform: rotate(3deg) translateY(-1.5px); }
+}
+@keyframes buddy-bop {
+  0% { transform: rotate(-9deg) translateY(0) scaleY(.97); }
+  100% { transform: rotate(9deg) translateY(-3px) scaleY(1.02); }
+}
+@keyframes buddy-wiggle {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-14deg) scale(1.08); }
+  45% { transform: rotate(12deg) scale(1.08); }
+  70% { transform: rotate(-6deg) scale(1.04); }
+}
+@keyframes note-float {
+  0% { opacity: 0; transform: translate(0, 8px) rotate(0); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translate(10px, -18px) rotate(18deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .buddy img, .buddy.vibing img, .buddy.vibing::after { animation: none; }
+}
+
 /* ───────── overlays ───────── */
 
 .overlay {
