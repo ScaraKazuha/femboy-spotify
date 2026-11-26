@@ -8,7 +8,8 @@ A cute, pastel-pink Spotify client written in Rust. ✧
 
 ## Features
 
-- plays music right inside the app (no official Spotify app needed) via [librespot](https://github.com/librespot-org/librespot)
+- a pretty **Spotify Connect remote**: pick songs here, the official Spotify app on your
+  computer, phone or speaker plays them (switch devices from the devices button)
 - home screen with a big custom banner, shortcut tiles, and "made for you" cards
 - liked songs, playlists, recently played, search
 - now-playing panel with big cover art and **time-synced lyrics** (click a line to jump to it)
@@ -19,7 +20,8 @@ A cute, pastel-pink Spotify client written in Rust. ✧
 
 ## Requirements
 
-- **Spotify Premium** account (librespot only works with Premium)
+- **Spotify Premium** account (remote control needs Premium)
+- the official **Spotify app open on any device** (computer, phone, speaker): that's where the music plays
 - [Rust](https://rustup.rs) 1.85+ to build from source
 - Windows 10/11 (uses WebView2, already installed on Windows 11)
 - Linux: `sudo apt install libwebkit2gtk-4.1-dev libasound2-dev pkg-config build-essential`
@@ -35,6 +37,14 @@ cargo run --release
 On first launch, click **sign in with Spotify**. Your browser opens the Spotify login page.
 After that, your login is saved (in your OS cache dir, `femboy-spotify/`), so next time the app starts right away.
 To log out, click the ribbon 🎀 at the bottom of the sidebar.
+
+### Why a remote?
+
+Spotify currently refuses to give audio decryption keys to [librespot](https://github.com/librespot-org/librespot)
+(the open-source library every third-party client uses, see
+[librespot#1649](https://github.com/librespot-org/librespot/issues/1649)), so the app can't play the audio itself.
+Instead it joins your Spotify Connect devices like the official "devices" menu does and controls them.
+The terminal version still tries local playback and is affected by that issue.
 
 No developer account or Client ID is needed: your profile, playlists, liked songs,
 search and lyrics come from the same internal Spotify services the official app uses

@@ -1,21 +1,26 @@
 //! ♡ femboy spotify ♡ — the desktop app (Tauri window, pink web UI in `ui/`).
+//!
+//! Music plays in the official Spotify app on any of the user's devices; this app
+//! is a pretty remote for it (Spotify Connect), see `remote.rs`.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::Arc;
 
 use femboy_spotify::{
-    api::{Api, LyricLine, Me, Playlist, Track},
+    api::{Api, LyricLine, Me, Playlist, Track, encode_query},
     auth::{self, Login},
-    player::Player,
+    remote::{Remote, RemoteState},
 };
+use librespot::core::session::Session;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
 
 /// Everything that exists only after a successful login.
 struct Core {
     api: Api,
-    player: Player,
+    remote: Remote,
+    session: Session,
 }
 
 #[derive(Default)]
@@ -50,17 +55,17 @@ impl AppState {
             .ok_or_else(|| "not logged in".to_string())
     }
 
-    async fn start(&self, app: &AppHandle, login: Login, volume: u16) -> CmdResult<()> {
-        let (player, mut events) = Player::new(login.session.clone(), volume).map_err(err)?;
+    async fn start(&self, app: &AppHandle, login: Login) -> CmdResult<()> {
         let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            while let Some(ev) = events.recv().await {
-                let _ = app.emit("player", ev);
-            }
-        });
+        let remote = Remote::start(login.session.clone(), move |st: RemoteState| {
+            let _ = app.emit("remote", st);
+        })
+        .await
+        .map_err(err)?;
         *self.core.write().await = Some(Arc::new(Core {
             api: Api::new(&login),
-            player,
+            remote,
+            session: login.session,
         }));
         Ok(())
     }
@@ -70,13 +75,13 @@ impl AppState {
 
 /// Tries the saved login. `true` when we're in.
 #[tauri::command]
-async fn init(app: AppHandle, state: State<'_, AppState>, volume: u16) -> CmdResult<bool> {
+async fn init(app: AppHandle, state: State<'_, AppState>) -> CmdResult<bool> {
     if state.core.read().await.is_some() {
         return Ok(true);
     }
     match auth::connect_cached().await.map_err(err)? {
         Some(login) => {
-            state.start(&app, login, volume).await?;
+            state.start(&app, login).await?;
             Ok(true)
         }
         None => Ok(false),
@@ -85,18 +90,16 @@ async fn init(app: AppHandle, state: State<'_, AppState>, volume: u16) -> CmdRes
 
 /// Opens the browser for Spotify sign-in.
 #[tauri::command]
-async fn login(app: AppHandle, state: State<'_, AppState>, volume: u16) -> CmdResult<()> {
+async fn login(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     log_line("login: opening browser for Spotify sign-in");
     let login = auth::login_interactive().await.map_err(err)?;
-    log_line("login: signed in, starting player");
-    state.start(&app, login, volume).await
+    log_line("login: signed in, joining Spotify Connect");
+    state.start(&app, login).await
 }
 
 #[tauri::command]
 async fn logout(state: State<'_, AppState>) -> CmdResult<()> {
-    if let Some(core) = state.core.write().await.take() {
-        core.player.pause();
-    }
+    state.core.write().await.take();
     auth::logout().map_err(err)
 }
 
@@ -128,6 +131,11 @@ async fn search(state: State<'_, AppState>, q: String) -> CmdResult<Vec<Track>> 
 }
 
 #[tauri::command]
+async fn track_info(state: State<'_, AppState>, uri: String) -> CmdResult<Option<Track>> {
+    state.core().await?.api.track(&uri).await.map_err(err)
+}
+
+#[tauri::command]
 async fn save_track(state: State<'_, AppState>, id: String) -> CmdResult<()> {
     state.core().await?.api.save_track(&id).await.map_err(err)
 }
@@ -137,35 +145,73 @@ async fn lyrics(state: State<'_, AppState>, id: String) -> CmdResult<Option<Vec<
     state.core().await?.api.lyrics(&id).await.map_err(err)
 }
 
-// ---------- playback ----------
+// ---------- remote playback (Spotify Connect) ----------
 
 #[tauri::command]
-async fn play(state: State<'_, AppState>, uri: String) -> CmdResult<()> {
-    state.core().await?.player.load(&uri).map_err(err)
+async fn remote_state(state: State<'_, AppState>) -> CmdResult<RemoteState> {
+    Ok(state.core().await?.remote.state())
+}
+
+/// `context`: "liked", "search:<query>", a spotify: URI, or null to send `uris` as the queue.
+#[tauri::command]
+async fn play(
+    state: State<'_, AppState>,
+    context: Option<String>,
+    uris: Vec<String>,
+    index: usize,
+    device: Option<String>,
+) -> CmdResult<()> {
+    let core = state.core().await?;
+    let context = context.map(|c| {
+        if c == "liked" {
+            format!("spotify:user:{}:collection", core.session.username())
+        } else if let Some(q) = c.strip_prefix("search:") {
+            format!("spotify:search:{}", encode_query(q))
+        } else {
+            c
+        }
+    });
+    core.remote
+        .play(context, &uris, index, device.as_deref())
+        .await
+        .map_err(err)
+}
+
+/// pause, resume, skip_next, skip_prev
+#[tauri::command]
+async fn control(state: State<'_, AppState>, action: String) -> CmdResult<()> {
+    let endpoint = match action.as_str() {
+        "pause" | "resume" | "skip_next" | "skip_prev" => action.as_str(),
+        _ => return Err(format!("unknown action {action}")),
+    };
+    state.core().await?.remote.simple(endpoint).await.map_err(err)
 }
 
 #[tauri::command]
-async fn pause(state: State<'_, AppState>) -> CmdResult<()> {
-    state.core().await?.player.pause();
-    Ok(())
+async fn seek(state: State<'_, AppState>, ms: u64) -> CmdResult<()> {
+    state.core().await?.remote.seek(ms).await.map_err(err)
 }
 
+/// shuffle, repeat_context, repeat_track
 #[tauri::command]
-async fn resume(state: State<'_, AppState>) -> CmdResult<()> {
-    state.core().await?.player.play();
-    Ok(())
-}
-
-#[tauri::command]
-async fn seek(state: State<'_, AppState>, ms: u32) -> CmdResult<()> {
-    state.core().await?.player.seek(ms);
-    Ok(())
+async fn set_option(state: State<'_, AppState>, name: String, value: bool) -> CmdResult<()> {
+    let endpoint = match name.as_str() {
+        "shuffle" => "set_shuffling_context",
+        "repeat_context" => "set_repeating_context",
+        "repeat_track" => "set_repeating_track",
+        _ => return Err(format!("unknown option {name}")),
+    };
+    state.core().await?.remote.set_option(endpoint, value).await.map_err(err)
 }
 
 #[tauri::command]
 async fn set_volume(state: State<'_, AppState>, volume: u16) -> CmdResult<()> {
-    state.core().await?.player.set_volume(volume);
-    Ok(())
+    state.core().await?.remote.set_volume(volume).await.map_err(err)
+}
+
+#[tauri::command]
+async fn transfer(state: State<'_, AppState>, device: String) -> CmdResult<()> {
+    state.core().await?.remote.transfer(&device).await.map_err(err)
 }
 
 fn main() {
@@ -184,13 +230,16 @@ fn main() {
             playlists,
             playlist_tracks,
             search,
+            track_info,
             save_track,
             lyrics,
+            remote_state,
             play,
-            pause,
-            resume,
+            control,
             seek,
+            set_option,
             set_volume,
+            transfer,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start femboy spotify");

@@ -783,6 +783,43 @@ img { display: block; }
 
 .custom-card { width: 440px; }
 
+.nodevice-card { width: 440px; text-align: center; }
+.nodevice-card h2 { margin: 6px 0 8px; }
+.nodevice-card p { color: var(--plum-2); line-height: 1.45; margin: 0 0 18px; }
+
+/* ───────── devices popover ───────── */
+
+.devices-pop {
+  position: fixed;
+  right: 150px;
+  bottom: 96px;
+  width: 300px;
+  padding: 14px 12px 10px;
+  background: var(--panel-solid);
+  border: 2px solid var(--line-strong);
+  border-radius: 18px;
+  box-shadow: 0 14px 40px rgba(120, 60, 110, .22);
+  z-index: 40;
+}
+.devices-head { font-weight: 700; font-size: 18px; padding: 0 8px 8px; }
+.dev {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  text-align: left;
+}
+.dev:hover { background: rgba(255, 156, 197, .18); }
+.dev.active { background: linear-gradient(90deg, #ffd3e5, #f3e1fb); }
+.dev .ico { width: 24px; height: 24px; flex-shrink: 0; }
+.dev-name { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dev-meta { font-size: 13px; color: var(--plum-soft); }
+.dev.active .dev-meta { color: var(--pink-2); font-weight: 600; }
+.dev-empty { text-align: center; color: var(--plum-soft); padding: 10px; line-height: 1.5; margin: 0; }
+.devices-hint { font-size: 12px; color: var(--plum-soft); text-align: center; margin: 8px 0 0; }
+
 /* ───────── cat ears ───────── */
 
 :root {

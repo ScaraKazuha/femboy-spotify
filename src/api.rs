@@ -77,7 +77,7 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// Percent-encodes a search query for a `spotify:search:` URI (spaces become `+`).
-fn encode_query(q: &str) -> String {
+pub fn encode_query(q: &str) -> String {
     let mut out = String::new();
     for b in q.trim().bytes() {
         match b {
@@ -203,6 +203,11 @@ impl Api {
         }
         uris.truncate(limit);
         Ok(uris)
+    }
+
+    /// Info for one track (e.g. what another device is playing right now).
+    pub async fn track(&self, uri: &str) -> Result<Option<Track>> {
+        Ok(self.tracks(&[uri.to_string()]).await?.into_iter().next())
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<Track>> {

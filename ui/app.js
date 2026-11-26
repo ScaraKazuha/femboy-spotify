@@ -39,6 +39,14 @@ const S = {
   lyrics: null,
   lyricsFor: null,
   saved: new Set(),
+  // Spotify Connect
+  now: null,          // track playing on the active device
+  ctx: null,          // context string sent with play
+  durationMs: 0,
+  devices: [],
+  activeDevice: null,
+  activeDeviceName: null,
+  cache: new Map(),   // uri -> track info
 };
 
 const $ = (id) => document.getElementById(id);
@@ -62,7 +70,7 @@ function toast(msg) {
 const PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd0e4"/><stop offset="1" stop-color="#d9c5f7"/></linearGradient></defs><rect width="100" height="100" fill="url(#g)"/><path d="M50 74S24 58 20 44c-3-10 3-20 13-20 7 0 12 4 17 10 5-6 10-10 17-10 10 0 16 10 13 20-4 14-30 30-30 30z" fill="#fff" opacity=".85"/></svg>');
 const img = (url) => esc(url || PLACEHOLDER);
-const current = () => S.queue[S.index] || null;
+const current = () => S.now;
 
 /* ───────────── navigation ───────────── */
 
@@ -98,7 +106,7 @@ function openRecent() {
 async function openPlaylist(p) {
   const view = { name: 'list', kind: 'playlist', id: p.id, title: p.name, sub: p.owner ? `by ${p.owner}` : 'playlist', image: p.image, tracks: null, loading: true };
   go(view);
-  try { view.tracks = await invoke('playlist_tracks', { id: p.id }); } catch (e) { return fail(e); }
+  try { view.tracks = await invoke('playlist_tracks', { id: p.id }); cacheTracks(view.tracks); } catch (e) { return fail(e); }
   view.loading = false;
   if (S.view === view) render();
 }
@@ -108,10 +116,11 @@ async function doSearch(q) {
   q = q.trim();
   if (q.length < 2) return;
   const seq = ++searchSeq;
-  const view = { name: 'list', kind: 'search', title: `"${q}"`, sub: 'search results', tracks: null, loading: true };
+  const view = { name: 'list', kind: 'search', q, title: `"${q}"`, sub: 'search results', tracks: null, loading: true };
   go(view, { push: S.view.kind !== 'search' });
   try {
     const tracks = await invoke('search', { q });
+    cacheTracks(tracks);
     if (seq !== searchSeq) return;
     view.tracks = tracks;
     view.loading = false;
@@ -302,7 +311,7 @@ function renderNow() {
   $('right-artist').textContent = t ? t.artists : 'pick a song ♡';
   $('np-name').textContent = t ? t.name : '—';
   $('np-artist').textContent = t ? t.artists : '';
-  $('right-title').textContent = S.context ? `Now playing • ${S.context}` : 'Now playing';
+  renderDeviceInfo();
   document.title = t ? `${t.name} · ${t.artists} ♡` : 'Femboy Spotify';
   const saved = t && S.saved.has(t.id);
   for (const id of ['right-add', 'np-add']) {
@@ -329,18 +338,18 @@ function renderPlayState() {
   setIcon($('btn-mute'), S.muted || S.volume === 0 ? 'volume-off' : 'volume');
 }
 
+const duration = () => S.durationMs || current()?.duration_ms || 0;
+
 function position() {
   let p = S.pos;
   if (S.playing && !S.buffering) p += performance.now() - S.posAt;
-  const t = current();
-  return t ? Math.min(p, t.duration_ms) : 0;
+  return current() ? Math.min(p, duration()) : 0;
 }
 function setPos(ms) { S.pos = ms; S.posAt = performance.now(); }
 
 function tick() {
-  const t = current();
   const pos = position();
-  const dur = t?.duration_ms || 0;
+  const dur = duration();
   const pct = dur ? (pos / dur) * 100 : 0;
   if (!seekDrag) {
     $('seek-fill').style.width = pct + '%';
@@ -351,86 +360,226 @@ function tick() {
   syncLyrics(pos);
 }
 
-/* ───────────── playback ───────────── */
+/* ───────────── playback (Spotify Connect remote) ─────────────
+   The music plays in the official Spotify app on one of the user's devices.
+   We send commands and mirror the state Spotify pushes back ("remote" events). */
 
-function playFrom(tracks, i, context) {
+const NO_DEVICE = 'no-spotify-device';
+
+// which Spotify context a list view corresponds to
+function contextOf(v) {
+  if (v.kind === 'liked') return 'liked';
+  if (v.kind === 'playlist') return `spotify:playlist:${v.id}`;
+  // search results, history, queue: send the list itself
+  // (Spotify answers 403 when a remote starts a "spotify:search:" context)
+  return null;
+}
+
+function cacheTracks(list) { (list || []).forEach((t) => S.cache.set(t.uri, t)); }
+
+// a device to start on when nothing is active yet (prefer a computer)
+function pickDevice() {
+  if (S.activeDevice) return null;
+  const d = S.devices.find((x) => x.kind === 'computer') || S.devices[0];
+  return d ? d.id : null;
+}
+
+function handleRemoteError(e) {
+  if (String(e).includes(NO_DEVICE)) { showNoDevice(); return; }
+  toast(`oopsie: ${e}`);
+}
+
+function playFrom(tracks, i, label, ctx = null) {
   S.queue = tracks.slice();
-  S.context = context || '';
+  S.context = label || '';
+  S.ctx = ctx;
+  cacheTracks(tracks);
   playIndex(i);
 }
 
 async function playIndex(i) {
   const t = S.queue[i];
   if (!t) return;
+  // optimistic: show it right away, Spotify confirms a moment later
   S.index = i;
   S.playing = true;
   S.buffering = true;
+  S.durationMs = t.duration_ms;
   setPos(0);
-  S.lyrics = null;
-  S.lyricsFor = null;
-  renderNow();
-  if (S.view.name === 'lyrics' || S.view.name === 'queue') render();
-  try { await invoke('play', { uri: t.uri }); } catch (e) { toast(`can't play this: ${e}`); }
-  remember(t);
-  loadLyrics(t);
+  setNow(t);
+  try {
+    await invoke('play', { context: S.ctx, uris: S.queue.map((x) => x.uri), index: i, device: pickDevice() });
+  } catch (e) {
+    S.playing = false;
+    S.buffering = false;
+    renderPlayState();
+    handleRemoteError(e);
+  }
 }
 
-function next(auto = false) {
-  if (!S.queue.length) return;
-  if (auto && S.repeat === 'one') return playIndex(S.index);
-  let n;
-  if (S.shuffle && S.queue.length > 1) {
-    do { n = Math.floor(Math.random() * S.queue.length); } while (n === S.index);
-  } else n = S.index + 1;
-  if (n >= S.queue.length) {
-    if (S.repeat === 'all') n = 0;
-    else { S.playing = false; renderPlayState(); if (auto) toast('end of the queue~ ♡'); return; }
-  }
-  playIndex(n);
-}
+const control = (action) => invoke('control', { action }).catch(handleRemoteError);
+
+function next() { if (current()) control('skip_next'); }
 
 function prev() {
   if (!current()) return;
-  if (position() > 3000 || S.index === 0) { seekTo(0); return; }
-  playIndex(S.index - 1);
+  if (position() > 3000) { seekTo(0); return; }
+  control('skip_prev');
 }
 
 async function togglePlay() {
   if (!current()) {
-    const list = S.view.tracks?.length ? S.view.tracks : S.liked;
-    if (list?.length) playFrom(list, 0, S.view.title || 'Liked Songs');
+    const v = S.view;
+    if (v.tracks?.length) playFrom(v.tracks, 0, v.title, contextOf(v));
+    else if (S.liked?.length) playFrom(S.liked, 0, 'Liked Songs', 'liked');
     return;
+  }
+  if (!S.activeDevice) {
+    // nothing active any more: start the song again on a device
+    if (S.index >= 0) return playIndex(S.index);
+    return showNoDevice();
   }
   if (S.playing) {
     setPos(position());
     S.playing = false;
     renderPlayState();
-    await invoke('pause').catch(toast);
+    control('pause');
   } else {
     S.playing = true;
     setPos(S.pos);
     renderPlayState();
-    await invoke('resume').catch(toast);
+    control('resume');
   }
 }
 
 function seekTo(ms) {
   setPos(ms);
-  invoke('seek', { ms: Math.round(ms) }).catch(toast);
+  invoke('seek', { ms: Math.round(ms) }).catch(handleRemoteError);
   tick();
 }
 
 let volTimer;
-function setVolume(v, { save = true } = {}) {
+let volTouched = 0;
+function drawVolume(v) {
+  $('vol-fill').style.width = v + '%';
+  $('vol-knob').style.left = v + '%';
+}
+function setVolume(v, { send = true } = {}) {
   S.volume = Math.max(0, Math.min(100, Math.round(v)));
   S.muted = false;
-  $('vol-fill').style.width = S.volume + '%';
-  $('vol-knob').style.left = S.volume + '%';
+  volTouched = performance.now();
+  drawVolume(S.volume);
   renderPlayState();
+  if (!send) return;
   clearTimeout(volTimer);
-  volTimer = setTimeout(() => invoke('set_volume', { volume: S.volume }).catch(() => {}), 40);
-  if (save) store.set('volume', S.volume);
+  volTimer = setTimeout(() => invoke('set_volume', { volume: S.volume }).catch(() => {}), 120);
 }
+
+function setOption(name, value) {
+  invoke('set_option', { name, value }).catch(handleRemoteError);
+}
+
+/* the currently playing track changed (by us or on another device) */
+function setNow(t) {
+  const changed = S.now?.uri !== t.uri;
+  S.now = t;
+  S.index = S.queue.findIndex((x) => x.uri === t.uri);
+  if (changed) {
+    S.lyrics = null;
+    S.lyricsFor = null;
+    remember(t);
+    loadLyrics(t);
+  }
+  renderNow();
+  if (changed && (S.view.name === 'lyrics' || S.view.name === 'queue')) render();
+}
+
+async function onRemoteTrack(uri) {
+  const known = S.cache.get(uri) || S.queue.find((x) => x.uri === uri);
+  if (known) return setNow(known);
+  setNow({ uri, id: uri.split(':').pop(), name: '...', artists: '', album: '', duration_ms: S.durationMs });
+  try {
+    const info = await invoke('track_info', { uri });
+    if (info) {
+      S.cache.set(uri, info);
+      if (S.now?.uri === uri) { S.now = info; renderNow(); }
+    }
+  } catch { /* keep the placeholder */ }
+}
+
+function applyRemote(st) {
+  S.devices = st.devices || [];
+  S.activeDevice = st.active_device;
+  S.activeDeviceName = st.active_device_name;
+  S.playing = st.playing;
+  S.buffering = st.playing && st.buffering;
+  S.durationMs = st.duration_ms || S.durationMs;
+  setPos(st.position_ms);
+  S.shuffle = st.shuffle;
+  S.repeat = st.repeat_track ? 'one' : st.repeat_context ? 'all' : 'off';
+  if (st.volume != null && !S.muted && performance.now() - volTouched > 1500 && !$('vol-bar').classList.contains('drag')) {
+    S.volume = st.volume;
+    drawVolume(S.volume);
+  }
+  if (st.track_uri && st.track_uri !== S.now?.uri) onRemoteTrack(st.track_uri);
+  renderDeviceInfo();
+  renderPlayState();
+  if (!$('devices-pop').classList.contains('hidden')) renderDevices();
+}
+
+/* ───────────── devices ───────────── */
+
+const KIND_ICON = { computer: 'devices', phone: 'devices', tablet: 'devices', speaker: 'volume', tv: 'mini', cast: 'mini', console: 'mini', car: 'volume', watch: 'disc', device: 'devices' };
+
+function renderDeviceInfo() {
+  const name = S.activeDeviceName;
+  $('right-title').textContent = name ? `Now playing • on ${name}` : (S.context ? `Now playing • ${S.context}` : 'Now playing');
+  $('btn-devices').classList.toggle('active', !!name);
+  $('btn-devices').title = name ? `playing on ${name}` : 'devices';
+}
+
+function renderDevices() {
+  const list = $('devices-list');
+  if (!S.devices.length) {
+    list.innerHTML = `<p class="dev-empty">no Spotify devices online (｡•́︿•̀｡)<br>open the Spotify app on your computer or phone</p>`;
+    return;
+  }
+  list.innerHTML = S.devices.map((d) => `
+    <button class="dev ${d.active ? 'active' : ''}" data-device="${esc(d.id)}">
+      ${icon(KIND_ICON[d.kind] || 'devices')}
+      <span class="dev-name">${esc(d.name)}</span>
+      <span class="dev-meta">${d.active ? (S.playing ? 'playing ♪' : 'connected') : esc(d.kind)}</span>
+    </button>`).join('');
+}
+
+function toggleDevices(force) {
+  const pop = $('devices-pop');
+  const show = force ?? pop.classList.contains('hidden');
+  pop.classList.toggle('hidden', !show);
+  if (show) renderDevices();
+}
+
+$('devices-list').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-device]');
+  if (!b) return;
+  const id = b.dataset.device;
+  if (id === S.activeDevice) return toggleDevices(false);
+  toggleDevices(false);
+  if (S.activeDevice) {
+    toast('moving the music ♡');
+    invoke('transfer', { device: id }).catch(handleRemoteError);
+  } else if (S.index >= 0) {
+    try { await invoke('play', { context: S.ctx, uris: S.queue.map((x) => x.uri), index: S.index, device: id }); } catch (err) { handleRemoteError(err); }
+  } else {
+    invoke('transfer', { device: id }).catch(handleRemoteError);
+  }
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#devices-pop') && !e.target.closest('#btn-devices')) toggleDevices(false);
+});
+
+function showNoDevice() { $('nodevice').classList.remove('hidden'); }
+$('nodevice-ok').onclick = () => $('nodevice').classList.add('hidden');
 
 async function saveCurrent() {
   const t = current();
@@ -530,7 +679,7 @@ bindBar($('seek-bar'), (r) => {
   if (current()) seekTo(r * current().duration_ms);
 });
 
-bindBar($('vol-bar'), (r) => setVolume(r * 100, { save: false }), (r) => setVolume(r * 100));
+bindBar($('vol-bar'), (r) => setVolume(r * 100, { send: false }), (r) => setVolume(r * 100));
 
 /* ───────────── events ───────────── */
 
@@ -555,16 +704,19 @@ main.addEventListener('click', (e) => {
   if (el.dataset.index !== undefined) {
     const i = +el.dataset.index;
     if (S.view.name === 'queue') return playIndex(i);
-    return playFrom(S.view.tracks, i, S.view.title);
+    return playFrom(S.view.tracks, i, S.view.title, contextOf(S.view));
   }
   if (el.id === 'hero-edit') return openCustomize();
   if (el.id === 'hero-play') return playFeatured();
   if (el.id === 'list-play' || el.id === 'list-shuffle') {
-    const tracks = S.view.name === 'queue' ? S.queue : S.view.tracks;
+    const isQueue = S.view.name === 'queue';
+    const tracks = isQueue ? S.queue : S.view.tracks;
     if (!tracks?.length) return;
-    if (el.id === 'list-shuffle') { S.shuffle = true; store.set('shuffle', true); }
-    const start = el.id === 'list-shuffle' ? Math.floor(Math.random() * tracks.length) : 0;
-    return playFrom(tracks, start, S.view.title || 'Up next');
+    const shuffle = el.id === 'list-shuffle';
+    if (shuffle !== S.shuffle) setOption('shuffle', shuffle);
+    const start = shuffle ? Math.floor(Math.random() * tracks.length) : 0;
+    if (isQueue) return playIndex(start);
+    return playFrom(tracks, start, S.view.title, contextOf(S.view));
   }
 });
 
@@ -583,11 +735,11 @@ async function playFeatured() {
   try {
     if (!pl) {
       if (!S.liked) S.liked = await invoke('liked');
-      return playFrom(S.liked, 0, 'Liked Songs');
+      return playFrom(S.liked, 0, 'Liked Songs', 'liked');
     }
     toast(`playing ${pl.name} ♡`);
     const tracks = await invoke('playlist_tracks', { id: pl.id });
-    if (tracks.length) playFrom(tracks, S.shuffle ? Math.floor(Math.random() * tracks.length) : 0, pl.name);
+    if (tracks.length) playFrom(tracks, S.shuffle ? Math.floor(Math.random() * tracks.length) : 0, pl.name, `spotify:playlist:${pl.id}`);
   } catch (e) { toast(e); }
 }
 
@@ -619,23 +771,30 @@ $('btn-avatar').onclick = () => toast(S.me ? `logged in as ${S.me.name} ♡ (rib
 $('btn-play').onclick = togglePlay;
 $('btn-next').onclick = () => next();
 $('btn-prev').onclick = prev;
-$('btn-shuffle').onclick = () => { S.shuffle = !S.shuffle; store.set('shuffle', S.shuffle); renderPlayState(); toast(S.shuffle ? 'shuffle on ✧' : 'shuffle off'); };
+$('btn-shuffle').onclick = () => {
+  S.shuffle = !S.shuffle;
+  renderPlayState();
+  setOption('shuffle', S.shuffle);
+  toast(S.shuffle ? 'shuffle on ✧' : 'shuffle off');
+};
 $('btn-repeat').onclick = () => {
   S.repeat = { off: 'all', all: 'one', one: 'off' }[S.repeat];
-  store.set('repeat', S.repeat);
   renderPlayState();
+  if (S.repeat === 'all') setOption('repeat_context', true);
+  else if (S.repeat === 'one') setOption('repeat_track', true);
+  else { setOption('repeat_track', false); setOption('repeat_context', false); }
   toast({ off: 'repeat off', all: 'repeat all ↻', one: 'repeat one ♡' }[S.repeat]);
 };
 $('btn-mute').onclick = () => {
   if (S.muted) setVolume(S.volume);
-  else { S.muted = true; invoke('set_volume', { volume: 0 }).catch(() => {}); $('vol-fill').style.width = '0%'; $('vol-knob').style.left = '0%'; renderPlayState(); }
+  else { S.muted = true; invoke('set_volume', { volume: 0 }).catch(() => {}); drawVolume(0); renderPlayState(); }
 };
 $('right-add').onclick = saveCurrent;
 $('np-add').onclick = saveCurrent;
 $('btn-lyrics').onclick = () => (S.view.name === 'lyrics' ? goBack() : go({ name: 'lyrics' }));
 $('lyrics-open').onclick = () => go({ name: 'lyrics' });
 $('btn-queue').onclick = () => (S.view.name === 'queue' ? goBack() : go({ name: 'queue' }));
-$('btn-devices').onclick = () => toast('playing on this computer ♡');
+$('btn-devices').onclick = () => toggleDevices();
 $('btn-panel').onclick = () => {
   const hidden = $('app').classList.toggle('no-right');
   $('btn-panel').classList.toggle('active', !hidden);
@@ -741,7 +900,7 @@ $('btn-login').onclick = async () => {
   $('login-error').classList.add('hidden');
   $('login-text').textContent = 'finish signing in in your browser, then come back here ♡';
   try {
-    await invoke('login', { volume: S.volume });
+    await invoke('login');
     $('login').classList.add('hidden');
     await afterLogin();
   } catch (e) {
@@ -770,44 +929,22 @@ async function loadLibrary() {
   } catch (e) { toast(`couldn't load playlists: ${e}`); }
   renderSideThumbs();
   if (S.view.name === 'home') render();
-  invoke('liked').then((l) => { S.liked = l; l.forEach((t) => S.saved.add(t.id)); }).catch(() => {});
+  invoke('liked').then((l) => { S.liked = l; cacheTracks(l); l.forEach((t) => S.saved.add(t.id)); }).catch(() => {});
+  invoke('remote_state').then(applyRemote).catch(() => {});
 }
 
-listen('player', (ev) => {
-  switch (ev.kind) {
-    case 'loading': S.buffering = true; break;
-    case 'playing': S.playing = true; S.buffering = false; S.failStreak = 0; setPos(ev.ms); break;
-    case 'paused': S.playing = false; S.buffering = false; setPos(ev.ms); break;
-    case 'position': setPos(ev.ms); break;
-    case 'stopped': S.playing = false; S.buffering = false; break;
-    case 'endoftrack': next(true); return;
-    case 'unavailable':
-      S.failStreak = (S.failStreak || 0) + 1;
-      if (S.failStreak >= 3) {
-        // several in a row = Spotify refuses audio keys, don't race through the whole queue
-        S.playing = false;
-        S.buffering = false;
-        renderPlayState();
-        toast("Spotify refused to send the audio for these songs (audio key error). Playback stopped (｡•́︿•̀｡)");
-        return;
-      }
-      toast('this song is unavailable, skipping~');
-      next(true);
-      return;
-  }
-  renderPlayState();
-});
+listen('remote', applyRemote);
 
 async function start() {
   hydrateIcons();
   $('avatar-img').src = PLACEHOLDER;
-  setVolume(S.volume, { save: false });
+  drawVolume(S.volume);
   renderPlayState();
   render();
   renderNow();
   setInterval(tick, 250);
   try {
-    const ok = await invoke('init', { volume: S.volume });
+    const ok = await invoke('init');
     if (ok) await afterLogin();
     else $('login').classList.remove('hidden');
   } catch (e) {
@@ -842,12 +979,60 @@ async function demoInvoke(cmd, args = {}) {
     case 'liked': case 'recent': case 'playlist_tracks': return DEMO_TRACKS;
     case 'search': return DEMO_TRACKS.filter((t) => (t.name + t.artists).toLowerCase().includes(args.q.toLowerCase()));
     case 'lyrics': return [{ start_ms: 0, words: 'this is a demo, no real lyrics here' }, { start_ms: 4000, words: 'log in with Spotify to hear the music' }, { start_ms: 8000, words: 'pink pink pink ♡' }, { start_ms: 12000, words: 'la la la~' }];
-    case 'play': demoEmit({ kind: 'playing', ms: 0 }); return;
-    case 'pause': demoEmit({ kind: 'paused', ms: position() }); return;
-    case 'resume': demoEmit({ kind: 'playing', ms: position() }); return;
-    case 'seek': demoEmit({ kind: 'position', ms: args.ms }); return;
+    // a pretend Spotify Connect device
+    case 'remote_state': return demoState();
+    case 'track_info': return DEMO_TRACKS.find((t) => t.uri === args.uri) || null;
+    case 'play': {
+      const d = demoDevices();
+      demoRemote.active = args.device || demoRemote.active || d[0].id;
+      demoRemote.uris = args.uris;
+      demoRemote.uri = args.uris[args.index];
+      demoRemote.playing = true;
+      demoRemote.pos = 0;
+      demoRemote.at = performance.now();
+      demoEmit(demoState());
+      return null;
+    }
+    case 'control': {
+      const r = demoRemote;
+      if (!r.active) throw NO_DEVICE;
+      r.pos = demoPos();
+      r.at = performance.now();
+      if (args.action === 'pause') r.playing = false;
+      if (args.action === 'resume') r.playing = true;
+      if (args.action === 'skip_next' || args.action === 'skip_prev') {
+        const i = r.uris.indexOf(r.uri) + (args.action === 'skip_next' ? 1 : -1);
+        r.uri = r.uris[(i + r.uris.length) % r.uris.length];
+        r.pos = 0;
+      }
+      demoEmit(demoState());
+      return null;
+    }
+    case 'seek': demoRemote.pos = args.ms; demoRemote.at = performance.now(); demoEmit(demoState()); return null;
+    case 'set_option': demoRemote[args.name] = args.value; demoEmit(demoState()); return null;
+    case 'set_volume': demoRemote.volume = args.volume; return null;
+    case 'transfer': demoRemote.active = args.device; demoEmit(demoState()); return null;
     default: return null;
   }
+}
+
+const demoRemote = { active: null, uris: [], uri: null, playing: false, pos: 0, at: 0, volume: 66, shuffle: false, repeat_context: false, repeat_track: false };
+function demoDevices() {
+  return [{ id: 'laptop', name: 'Demo Laptop', kind: 'computer' }, { id: 'phone', name: 'Demo Phone', kind: 'phone' }]
+    .map((d) => ({ ...d, volume: demoRemote.volume, active: d.id === demoRemote.active }));
+}
+function demoPos() { return demoRemote.pos + (demoRemote.playing ? performance.now() - demoRemote.at : 0); }
+function demoState() {
+  const r = demoRemote;
+  const dev = demoDevices().find((d) => d.active);
+  const t = DEMO_TRACKS.find((x) => x.uri === r.uri);
+  return {
+    devices: demoDevices(), active_device: r.active, active_device_name: dev?.name || null,
+    track_uri: r.active ? r.uri : null, context_uri: '', playing: r.playing && !!r.active, buffering: false,
+    position_ms: Math.round(demoPos()), duration_ms: t?.duration_ms || 0,
+    shuffle: r.shuffle, repeat_context: r.repeat_context, repeat_track: r.repeat_track,
+    volume: r.active ? r.volume : null, next_uris: [],
+  };
 }
 
 start();

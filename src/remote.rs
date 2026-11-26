@@ -1,0 +1,384 @@
+//! Spotify Connect remote control.
+//!
+//! Spotify no longer hands out audio decryption keys to librespot, so instead of
+//! playing audio ourselves we act like the official app's "devices" menu: we join
+//! the user's Connect cluster as a hidden observer, mirror what the active device
+//! is playing, and send it commands (play, pause, skip, seek, volume, transfer).
+//! The music itself plays in the official Spotify app (phone, computer, speaker…).
+
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use anyhow::{Context, Result, anyhow, bail};
+use futures_util::StreamExt;
+use librespot::core::{dealer::protocol::Message, session::Session};
+use librespot::protocol::{
+    connect::{
+        Capabilities, Cluster, ClusterUpdate, Device, DeviceInfo, MemberType, PutStateReason,
+        PutStateRequest,
+    },
+    devices::DeviceType,
+};
+use protobuf::{EnumOrUnknown, Message as _, MessageField};
+use reqwest::Method;
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+use serde::Serialize;
+use serde_json::{Value, json};
+
+use crate::auth::log;
+
+/// Error text the UI recognises to show "open Spotify somewhere".
+pub const NO_DEVICE: &str = "no-spotify-device";
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RemoteDevice {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    /// 0..=100
+    pub volume: u16,
+    pub active: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct RemoteState {
+    pub devices: Vec<RemoteDevice>,
+    pub active_device: Option<String>,
+    pub active_device_name: Option<String>,
+    pub track_uri: Option<String>,
+    pub context_uri: String,
+    pub playing: bool,
+    pub buffering: bool,
+    /// position at the moment this state was sent
+    pub position_ms: u64,
+    pub duration_ms: u64,
+    pub shuffle: bool,
+    pub repeat_context: bool,
+    pub repeat_track: bool,
+    /// active device volume, 0..=100
+    pub volume: Option<u16>,
+    pub next_uris: Vec<String>,
+}
+
+type Listener = Box<dyn Fn(RemoteState) + Send + Sync>;
+
+#[derive(Clone)]
+pub struct Remote {
+    session: Session,
+    cluster: Arc<Mutex<Option<Cluster>>>,
+    on_update: Arc<Listener>,
+}
+
+fn device_kind(t: DeviceType) -> &'static str {
+    match t {
+        DeviceType::COMPUTER => "computer",
+        DeviceType::TABLET => "tablet",
+        DeviceType::SMARTPHONE => "phone",
+        DeviceType::SPEAKER => "speaker",
+        DeviceType::TV => "tv",
+        DeviceType::AVR | DeviceType::STB | DeviceType::AUDIO_DONGLE => "speaker",
+        DeviceType::GAME_CONSOLE => "console",
+        DeviceType::CAST_VIDEO | DeviceType::CAST_AUDIO => "cast",
+        DeviceType::AUTOMOBILE => "car",
+        DeviceType::SMARTWATCH => "watch",
+        _ => "device",
+    }
+}
+
+fn to_percent(v: u32) -> u16 {
+    ((v.min(65535) as u64 * 100 + 32767) / 65535) as u16
+}
+
+impl Remote {
+    /// Joins the Connect cluster. `on_update` is called whenever the state changes.
+    pub async fn start(
+        session: Session,
+        on_update: impl Fn(RemoteState) + Send + Sync + 'static,
+    ) -> Result<Self> {
+        fn connection_id(msg: Message) -> Result<String, librespot::core::Error> {
+            msg.headers
+                .get("Spotify-Connection-Id")
+                .cloned()
+                .ok_or_else(|| librespot::core::Error::invalid_argument("no connection id"))
+        }
+
+        let dealer = session.dealer();
+        let mut conn_ids = dealer
+            .listen_for("hm://pusher/v1/connections/", connection_id)
+            .map_err(|e| anyhow!("connect: {e}"))?;
+        let mut updates = dealer
+            .listen_for("hm://connect-state/v1/cluster", Message::from_raw::<ClusterUpdate>)
+            .map_err(|e| anyhow!("connect: {e}"))?;
+        dealer
+            .start()
+            .await
+            .map_err(|e| anyhow!("could not reach Spotify Connect: {e}"))?;
+
+        let remote = Self {
+            session,
+            cluster: Arc::new(Mutex::new(None)),
+            on_update: Arc::new(Box::new(on_update)),
+        };
+
+        let first = tokio::time::timeout(Duration::from_secs(20), conn_ids.next())
+            .await
+            .map_err(|_| anyhow!("Spotify Connect did not answer (timeout)"))?
+            .ok_or_else(|| anyhow!("Spotify Connect closed the connection"))?
+            .map_err(|e| anyhow!("connect: {e}"))?;
+        remote.register(&first).await?;
+
+        // keep listening: new connection ids (reconnects) and cluster updates
+        let r = remote.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    id = conn_ids.next() => match id {
+                        Some(Ok(id)) => {
+                            if let Err(e) = r.register(&id).await {
+                                log(&format!("connect: re-register failed: {e:#}"));
+                            }
+                        }
+                        Some(Err(e)) => log(&format!("connect: bad connection id: {e}")),
+                        None => break,
+                    },
+                    up = updates.next() => match up {
+                        Some(Ok(mut up)) => {
+                            if let Some(c) = up.cluster.take() {
+                                r.set_cluster(c);
+                            }
+                        }
+                        Some(Err(e)) => log(&format!("connect: bad cluster update: {e}")),
+                        None => break,
+                    },
+                }
+            }
+            log("connect: listener stopped");
+        });
+        Ok(remote)
+    }
+
+    /// Announces us as a hidden, non-playing observer device and stores the cluster.
+    async fn register(&self, connection_id: &str) -> Result<()> {
+        self.session.set_connection_id(connection_id);
+        let info = DeviceInfo {
+            can_play: false,
+            volume: 0,
+            name: "femboy spotify".into(),
+            device_id: self.session.device_id().to_string(),
+            device_type: EnumOrUnknown::new(DeviceType::COMPUTER),
+            device_software_version: env!("CARGO_PKG_VERSION").into(),
+            client_id: self.session.client_id(),
+            capabilities: MessageField::some(Capabilities {
+                can_be_player: false,
+                is_observable: true,
+                is_controllable: false,
+                hidden: true,
+                needs_full_player_state: true,
+                supports_gzip_pushes: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let req = PutStateRequest {
+            member_type: EnumOrUnknown::new(MemberType::CONNECT_STATE),
+            put_state_reason: EnumOrUnknown::new(PutStateReason::NEW_DEVICE),
+            device: MessageField::some(Device {
+                device_info: MessageField::some(info),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let bytes = self
+            .session
+            .spclient()
+            .put_connect_state_request(&req)
+            .await
+            .map_err(|e| anyhow!("could not join Spotify Connect: {e}"))?;
+        let cluster = Cluster::parse_from_bytes(&bytes).context("bad cluster from Spotify")?;
+        log(&format!(
+            "connect: joined, {} device(s), active: '{}'",
+            cluster.device.len(),
+            cluster.active_device_id
+        ));
+        self.set_cluster(cluster);
+        Ok(())
+    }
+
+    fn set_cluster(&self, c: Cluster) {
+        let state = self.state_of(&c);
+        *self.cluster.lock().unwrap() = Some(c);
+        (self.on_update)(state);
+    }
+
+    pub fn state(&self) -> RemoteState {
+        match &*self.cluster.lock().unwrap() {
+            Some(c) => self.state_of(c),
+            None => RemoteState::default(),
+        }
+    }
+
+    fn state_of(&self, c: &Cluster) -> RemoteState {
+        let me = self.session.device_id().to_string();
+        let mut devices: Vec<RemoteDevice> = c
+            .device
+            .values()
+            .filter(|d| d.device_id != me)
+            .filter(|d| !d.capabilities.hidden && d.can_play)
+            .map(|d| RemoteDevice {
+                id: d.device_id.clone(),
+                name: d.name.clone(),
+                kind: device_kind(d.device_type.enum_value_or_default()).into(),
+                volume: to_percent(d.volume),
+                active: d.device_id == c.active_device_id,
+            })
+            .collect();
+        devices.sort_by(|a, b| b.active.cmp(&a.active).then(a.name.cmp(&b.name)));
+
+        let active = (!c.active_device_id.is_empty()).then(|| c.active_device_id.clone());
+        let active_dev = active.as_ref().and_then(|id| c.device.get(id));
+        let p = c.player_state.as_ref();
+        let (mut st, uri) = (RemoteState::default(), p.and_then(|p| p.track.as_ref()).map(|t| t.uri.clone()));
+        if let Some(p) = p {
+            let playing = p.is_playing && !p.is_paused;
+            let mut pos = p.position_as_of_timestamp.max(0);
+            if playing && c.server_timestamp_ms > 0 && p.timestamp > 0 {
+                pos += (c.server_timestamp_ms - p.timestamp).max(0);
+            }
+            if p.duration > 0 {
+                pos = pos.min(p.duration);
+            }
+            st.playing = playing && active.is_some();
+            st.buffering = p.is_buffering;
+            st.position_ms = pos as u64;
+            st.duration_ms = p.duration.max(0) as u64;
+            st.context_uri = p.context_uri.clone();
+            if let Some(o) = p.options.as_ref() {
+                st.shuffle = o.shuffling_context;
+                st.repeat_context = o.repeating_context;
+                st.repeat_track = o.repeating_track;
+            }
+            st.next_uris = p
+                .next_tracks
+                .iter()
+                .map(|t| t.uri.clone())
+                .filter(|u| u.starts_with("spotify:track:"))
+                .take(50)
+                .collect();
+        }
+        st.track_uri = uri.filter(|u| !u.is_empty() && active.is_some());
+        st.devices = devices;
+        st.active_device_name = active_dev.map(|d| d.name.clone());
+        st.volume = active_dev.map(|d| to_percent(d.volume));
+        st.active_device = active;
+        st
+    }
+
+    fn active_device(&self) -> Option<String> {
+        self.cluster
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|c| c.active_device_id.clone())
+            .filter(|id| !id.is_empty())
+    }
+
+    fn target(&self, device: Option<&str>) -> Result<String> {
+        if let Some(d) = device.filter(|d| !d.is_empty()) {
+            return Ok(d.to_string());
+        }
+        if let Some(d) = self.active_device() {
+            return Ok(d);
+        }
+        bail!(NO_DEVICE)
+    }
+
+    async fn post_json(&self, method: Method, endpoint: &str, body: Value) -> Result<()> {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        let body = body.to_string();
+        self.session
+            .spclient()
+            .request(&method, endpoint, Some(headers), Some(body.as_bytes()))
+            .await
+            .map_err(|e| anyhow!("Spotify did not accept the command: {e}"))?;
+        Ok(())
+    }
+
+    async fn command(&self, device: Option<&str>, command: Value) -> Result<()> {
+        let to = self.target(device)?;
+        let me = self.session.device_id();
+        self.post_json(
+            Method::POST,
+            &format!("/connect-state/v1/player/command/from/{me}/to/{to}"),
+            json!({ "command": command }),
+        )
+        .await
+    }
+
+    /// Plays `uris[index]`. With `context` (a playlist, liked songs or search) the
+    /// device keeps playing that context; otherwise the given list is sent as-is.
+    pub async fn play(
+        &self,
+        context: Option<String>,
+        uris: &[String],
+        index: usize,
+        device: Option<&str>,
+    ) -> Result<()> {
+        let track = uris.get(index).cloned().ok_or_else(|| anyhow!("nothing to play"))?;
+        let ctx = match context {
+            Some(uri) => json!({ "uri": uri, "url": format!("context://{uri}"), "metadata": {} }),
+            None => json!({
+                "uri": format!("spotify:femboy:queue:{}", track.trim_start_matches("spotify:track:")),
+                "metadata": {},
+                "pages": [{ "tracks": uris.iter().take(500).map(|u| json!({ "uri": u })).collect::<Vec<_>>() }],
+            }),
+        };
+        let cmd = json!({
+            "endpoint": "play",
+            "context": ctx,
+            "play_origin": { "feature_identifier": "femboy_spotify", "feature_version": env!("CARGO_PKG_VERSION") },
+            "options": {
+                "license": "premium",
+                "skip_to": { "track_uri": track, "track_index": index },
+                "player_options_override": {},
+            },
+        });
+        self.command(device, cmd).await
+    }
+
+    pub async fn simple(&self, endpoint: &str) -> Result<()> {
+        self.command(None, json!({ "endpoint": endpoint })).await
+    }
+
+    pub async fn seek(&self, ms: u64) -> Result<()> {
+        self.command(None, json!({ "endpoint": "seek_to", "value": ms })).await
+    }
+
+    pub async fn set_option(&self, endpoint: &str, value: bool) -> Result<()> {
+        self.command(None, json!({ "endpoint": endpoint, "value": value })).await
+    }
+
+    /// `percent` is 0..=100.
+    pub async fn set_volume(&self, percent: u16) -> Result<()> {
+        let to = self.target(None)?;
+        let me = self.session.device_id();
+        let v = (percent.min(100) as u32 * 65535 / 100) as u64;
+        self.post_json(
+            Method::PUT,
+            &format!("/connect-state/v1/connect/volume/from/{me}/to/{to}"),
+            json!({ "volume": v }),
+        )
+        .await
+    }
+
+    /// Moves playback to another device.
+    pub async fn transfer(&self, to: &str) -> Result<()> {
+        let from = self.active_device().unwrap_or_else(|| to.to_string());
+        self.post_json(
+            Method::POST,
+            &format!("/connect-state/v1/connect/transfer/from/{from}/to/{to}"),
+            json!({ "transfer_options": { "restore_paused": "restore" } }),
+        )
+        .await
+    }
+}
