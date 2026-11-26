@@ -15,6 +15,8 @@ const SCOPES: &[&str] = &[
     "user-read-private",
     "user-read-email",
     "user-library-read",
+    "user-library-modify",
+    "user-read-recently-played",
     "playlist-read-private",
     "playlist-read-collaborative",
     "user-read-playback-state",
@@ -38,27 +40,25 @@ fn cache() -> Result<Cache> {
     .map_err(|e| anyhow::anyhow!("cannot create cache in {}: {e}", dir.display()))
 }
 
-pub async fn connect() -> Result<Session> {
-    let config = SessionConfig::default();
+/// Logs in with saved credentials, if there are any that still work.
+pub async fn connect_cached() -> Result<Option<Session>> {
     let cache = cache()?;
-
-    if let Some(creds) = cache.credentials() {
-        let session = Session::new(config.clone(), Some(cache.clone()));
-        match session.connect(creds, true).await {
-            Ok(()) => return Ok(session),
-            Err(e) => eprintln!("saved login did not work ({e}), signing in again..."),
-        }
+    let Some(creds) = cache.credentials() else {
+        return Ok(None);
+    };
+    let session = Session::new(SessionConfig::default(), Some(cache));
+    match session.connect(creds, true).await {
+        Ok(()) => Ok(Some(session)),
+        Err(_) => Ok(None),
     }
+}
 
-    println!();
-    println!("  \x1b[38;2;255;92;170m♡ femboy spotify ♡\x1b[0m");
-    println!("  opening your browser to sign in to Spotify (Premium required)...");
-    println!("  if it does not open, copy the link printed below into your browser.");
-    println!();
-
+/// Opens the browser for a Spotify sign-in and connects with the result.
+pub async fn login_interactive() -> Result<Session> {
+    let config = SessionConfig::default();
     let client = OAuthClientBuilder::new(&config.client_id, REDIRECT_URI, SCOPES.to_vec())
         .open_in_browser()
-        .with_custom_message("all done! you can go back to femboy spotify now ♡")
+        .with_custom_message("all done! you can go back to femboy spotify now â™¡")
         .build()
         .context("could not start OAuth sign-in")?;
     let token = client
@@ -66,10 +66,33 @@ pub async fn connect() -> Result<Session> {
         .await
         .context("Spotify sign-in failed")?;
 
-    let session = Session::new(config, Some(cache));
+    let session = Session::new(config, Some(cache()?));
     session
         .connect(Credentials::with_access_token(token.access_token), true)
         .await
         .context("could not connect to Spotify (is this a Premium account?)")?;
     Ok(session)
+}
+
+/// Forgets the saved login.
+pub fn logout() -> Result<()> {
+    let file = data_dir().join("credentials").join("credentials.json");
+    if file.exists() {
+        std::fs::remove_file(&file)
+            .with_context(|| format!("cannot delete {}", file.display()))?;
+    }
+    Ok(())
+}
+
+/// Terminal flow: saved login, otherwise print a hint and open the browser.
+pub async fn connect() -> Result<Session> {
+    if let Some(session) = connect_cached().await? {
+        return Ok(session);
+    }
+    println!();
+    println!("  \x1b[38;2;255;92;170mâ™¡ femboy spotify â™¡\x1b[0m");
+    println!("  opening your browser to sign in to Spotify (Premium required)...");
+    println!("  if it does not open, copy the link printed below into your browser.");
+    println!();
+    login_interactive().await
 }

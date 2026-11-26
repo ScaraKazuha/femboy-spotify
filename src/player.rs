@@ -15,7 +15,8 @@ use librespot::{
 use tokio::sync::mpsc;
 
 /// Simplified player events for the UI (only for the current track).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(tag = "kind", content = "ms", rename_all = "lowercase")]
 pub enum Event {
     Loading,
     Playing(u32),

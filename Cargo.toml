@@ -1,12 +1,21 @@
 [package]
 name = "femboy-spotify"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
-description = "A cute pink terminal Spotify client"
+description = "A cute pink Spotify client written in Rust"
 license = "MIT"
 repository = "https://github.com/ScaraKazuha/femboy-spotify"
 readme = "README.md"
-keywords = ["spotify", "tui", "music", "player", "femboy"]
+default-run = "femboy-spotify"
+keywords = ["spotify", "tui", "gui", "music", "player", "femboy"]
+
+[lib]
+name = "femboy_spotify"
+path = "src/lib.rs"
+
+[[bin]]
+name = "femboy-spotify"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.105"
@@ -17,5 +26,10 @@ futures-util = "0.3.34"
 librespot = { version = "0.8.0", default-features = false, features = ["rodio-backend", "rustls-tls-native-roots"] }
 ratatui = "0.30.2"
 reqwest = { version = "0.13.5", features = ["json"] }
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+tauri = { version = "2.12.7", features = ["custom-protocol"] }
 tokio = { version = "1.54.1", features = ["full"] }
+
+[build-dependencies]
+tauri-build = "2.7.6"

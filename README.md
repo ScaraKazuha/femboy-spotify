@@ -1,39 +1,28 @@
 # ♡ femboy spotify ♡
 
-A cute, pink terminal Spotify client written in Rust. ✧
+A cute, pastel-pink Spotify client written in Rust. ✧
 
-```
-╭────────────────────────────────────────────────────────────────────────────────────────────╮
-│♡ f e m b o y   s p o t i f y ♡                                             ✧ hi, cutie ✧ │
-╰────────────────────────────────────────────────────────────────────────────────────────────╯
-╭ menu ──────────────────╮╭ ♥ liked songs ─────────────────────────────────────────────────────╮
-│  ✿ search              ││  #    title                artist               album        time │
-│❥ ♥ liked songs         ││                                                                  │
-│  ♫ playlists           ││❥ 1    song number 1        some artist          pink album   3:00 │
-╰────────────────────────╯│  ♪    song number 2        some artist          pink album   3:00 │
-╭ up next ───────────────╮│  3    song number 3        some artist          pink album   3:00 │
-│· song number 3         ││                                                                  │
-╰────────────────────────╯╰──────────────────────────────────────────────────────────────────╯
-╭ now playing ───────────────────────────────────────────────────────────────────────────────╮
-│▶ song number 2 — some artist                                                               │
-│████████████████████████████████ 1:12 / 3:00                                                │
-│vol ♥♥♥♥♥♥♥♡♡♡ 70%                                                                          │
-╰────────────────────────────────────────────────────────────────────────────────────────────╯
-```
+![femboy spotify](docs/screenshot.png)
+
+*(screenshot from demo mode: with your account you see your real playlists and album covers)*
 
 ## Features
 
-- plays music right in your terminal (no official app needed) via [librespot](https://github.com/librespot-org/librespot)
-- search tracks, liked songs, your playlists
-- queue, shuffle, seek, volume
-- pastel pink femboy-flag theme with an animated logo ♡
+- plays music right inside the app (no official Spotify app needed) via [librespot](https://github.com/librespot-org/librespot)
+- home screen with a big custom banner, shortcut tiles, and "made for you" cards
+- liked songs, playlists, recently played, search
+- now-playing panel with big cover art and **time-synced lyrics** (click a line to jump to it)
+- queue, shuffle, repeat (all / one), seek, volume, add to liked songs
+- custom banner: click ✎ on the banner (or the cat in the sidebar) to set your own picture and title
+- frameless pastel window, keyboard shortcuts
+- bonus: a terminal version (`femboy-spotify-tui`) for terminal lovers
 
 ## Requirements
 
 - **Spotify Premium** account (librespot only works with Premium)
-- a terminal with true color support (Windows Terminal, iTerm2, kitty, WezTerm, Alacritty, ...)
 - [Rust](https://rustup.rs) 1.85+ to build from source
-- Linux only: ALSA dev headers (`sudo apt install libasound2-dev pkg-config`)
+- Windows 10/11 (uses WebView2, already installed on Windows 11)
+- Linux: `sudo apt install libwebkit2gtk-4.1-dev libasound2-dev pkg-config build-essential`
 
 ## Install & run
 
@@ -43,30 +32,38 @@ cd femboy-spotify
 cargo run --release
 ```
 
-On first launch your browser opens a Spotify sign-in page. After you log in,
-credentials are cached (in your OS cache dir, `femboy-spotify/`), so next time it starts instantly.
+On first launch, click **sign in with Spotify**. Your browser opens the Spotify login page.
+After that, your login is saved (in your OS cache dir, `femboy-spotify/`), so next time the app starts right away.
+To log out, click the ribbon 🎀 at the bottom of the sidebar.
+
+Terminal version:
+
+```sh
+cargo run --release --bin femboy-spotify-tui
+```
 
 ## Keys
 
 | key | action |
 |---|---|
-| `/` | search |
-| `enter` | play track / open playlist |
-| `space` | pause / resume |
-| `n` / `p` | next / previous |
+| `space` | play / pause |
 | `←` / `→` | seek 10 s |
-| `+` / `-` | volume |
-| `s` | shuffle |
-| `tab` | switch between menu and list |
-| `↑↓` / `j k` | move |
-| `esc` | back to playlists |
-| `?` | help |
-| `q` | quit |
+| `↑` / `↓` | volume |
+| `n` / `p` | next / previous |
+| `/` or `ctrl+L` | search |
+| `alt+←` / `alt+→` | back / forward |
+
+## Hacking on the UI
+
+The interface is plain HTML/CSS/JS in [`ui/`](ui). Open `ui/index.html` through any local web server
+to get **demo mode** with fake data, no Spotify login needed. The Rust side lives in `src/`:
+`auth.rs` (login), `api.rs` (Spotify Web API + lyrics), `player.rs` (librespot playback), `main.rs` (Tauri commands).
 
 ## По-русски
 
-Милый розовый терминальный клиент Spotify на Rust. Нужен Spotify Premium.
-Запуск: `cargo run --release`. При первом запуске откроется браузер для входа в Spotify.
+Милый пастельно-розовый клиент Spotify на Rust: обложки, тексты песен, очередь, свой баннер.
+Нужен Spotify Premium. Запуск: `cargo run --release`. При первом запуске нажмите
+«sign in with Spotify», в браузере откроется вход в Spotify.
 
 ## Disclaimer
 

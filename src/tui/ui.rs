@@ -1,4 +1,4 @@
-//! Rendering ✧ everything pink ✧
+//! Rendering Ã¢Å“Â§ everything pink Ã¢Å“Â§
 
 use ratatui::{
     Frame,
@@ -11,10 +11,10 @@ use ratatui::{
     },
 };
 
-use crate::app::{App, Content, Focus, Section, fmt_ms};
-use crate::theme::*;
+use super::app::{App, Content, Focus, Section, fmt_ms};
+use super::theme::*;
 
-const LOGO: &str = "♡ f e m b o y   s p o t i f y ♡";
+const LOGO: &str = "Ã¢â„¢Â¡ f e m b o y   s p o t i f y Ã¢â„¢Â¡";
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
@@ -63,7 +63,7 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         .map(|(i, c)| Span::styled(c.to_string(), bold(FLAG[(i + shift) % FLAG.len()])))
         .collect();
 
-    let sparkle = ["✧", "✦", "⋆", "✦"][(app.tick / 3) as usize % 4];
+    let sparkle = ["Ã¢Å“Â§", "Ã¢Å“Â¦", "Ã¢â€¹â€ ", "Ã¢Å“Â¦"][(app.tick / 3) as usize % 4];
     let user = if app.user.is_empty() {
         String::new()
     } else {
@@ -92,7 +92,7 @@ fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
     let list = List::new(items)
         .block(block("menu", app.focus == Focus::Sidebar))
         .highlight_style(if app.focus == Focus::Sidebar { selected() } else { Style::default() })
-        .highlight_symbol("❥ ");
+        .highlight_symbol("Ã¢ÂÂ¥ ");
     f.render_stateful_widget(list, parts[0], &mut state);
 
     // up next
@@ -101,11 +101,11 @@ fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
         let room = parts[1].height.saturating_sub(2) as usize;
         for (i, t) in app.queue.iter().enumerate().skip(pos + 1).take(room) {
             let style = if i % 2 == 0 { fg(PASTEL) } else { fg(PINK) };
-            lines.push(Line::from(Span::styled(format!("· {}", t.name), style)));
+            lines.push(Line::from(Span::styled(format!("Ã‚Â· {}", t.name), style)));
         }
     }
     if lines.is_empty() {
-        lines.push(Line::from(Span::styled("  (˶ᵔ ᵕ ᵔ˶)", fg(PINK))));
+        lines.push(Line::from(Span::styled("  (Ã‹Â¶Ã¡Âµâ€ Ã¡Âµâ€¢ Ã¡Âµâ€Ã‹Â¶)", fg(PINK))));
         lines.push(Line::from(Span::styled("  queue is empty", fg(DIM))));
     }
     let title = if app.shuffle { "up next (shuffle)" } else { "up next" };
@@ -131,13 +131,13 @@ fn draw_main(f: &mut Frame, app: &mut App, area: Rect) {
         let msg = if app.loading {
             vec![
                 Line::from(""),
-                Line::from(Span::styled("  loading... ₍ᐢ. .ᐢ₎", fg(PINK))),
+                Line::from(Span::styled("  loading... Ã¢â€šÂÃ¡ÂÂ¢. .Ã¡ÂÂ¢Ã¢â€šÅ½", fg(PINK))),
             ]
         } else {
             vec![
                 Line::from(""),
                 Line::from(Span::styled("  nothing here yet~", fg(PINK))),
-                Line::from(Span::styled("  press / to search, tab to open the menu ♡", fg(DIM))),
+                Line::from(Span::styled("  press / to search, tab to open the menu Ã¢â„¢Â¡", fg(DIM))),
             ]
         };
         f.render_widget(Paragraph::new(msg).block(block(&title, focused)), area);
@@ -152,12 +152,12 @@ fn draw_main(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_search_box(f: &mut Frame, app: &App, area: Rect) {
     let typing = app.focus == Focus::Input;
-    let cursor = if typing && app.tick % 4 < 2 { "▏" } else { " " };
+    let cursor = if typing && app.tick % 4 < 2 { "Ã¢â€“Â" } else { " " };
     let text = if app.input.is_empty() && !typing {
         Line::from(Span::styled("press / and type a song, artist or album...", fg(DIM)))
     } else {
         Line::from(vec![
-            Span::styled("✿ ", fg(HOT_PINK)),
+            Span::styled("Ã¢Å“Â¿ ", fg(HOT_PINK)),
             Span::styled(app.input.clone(), bold(WHITE)),
             Span::styled(cursor, fg(HOT_PINK)),
         ])
@@ -174,7 +174,7 @@ fn draw_tracks(f: &mut Frame, app: &mut App, area: Rect, title: &str, focused: b
         .map(|(i, t)| {
             let is_playing = playing_uri.as_deref() == Some(t.uri.as_str());
             let (num, style) = if is_playing {
-                ("♪".to_string(), bold(HOT_PINK))
+                ("Ã¢â„¢Âª".to_string(), bold(HOT_PINK))
             } else {
                 ((i + 1).to_string(), fg(WHITE))
             };
@@ -206,7 +206,7 @@ fn draw_tracks(f: &mut Frame, app: &mut App, area: Rect, title: &str, focused: b
     )
     .block(block(title, focused))
     .row_highlight_style(selected())
-    .highlight_symbol("❥ ");
+    .highlight_symbol("Ã¢ÂÂ¥ ");
     f.render_stateful_widget(table, area, &mut app.track_state);
 }
 
@@ -217,14 +217,14 @@ fn draw_playlists(f: &mut Frame, app: &mut App, area: Rect, title: &str, focused
         .map(|p| {
             ListItem::new(Line::from(vec![
                 Span::styled(p.name.clone(), bold(WHITE)),
-                Span::styled(format!("  · {} · {} tracks", p.owner, p.total), fg(DIM)),
+                Span::styled(format!("  Ã‚Â· {} Ã‚Â· {} tracks", p.owner, p.total), fg(DIM)),
             ]))
         })
         .collect();
     let list = List::new(items)
         .block(block(title, focused))
         .highlight_style(selected())
-        .highlight_symbol("❥ ");
+        .highlight_symbol("Ã¢ÂÂ¥ ");
     f.render_stateful_widget(list, area, &mut app.playlist_state);
 }
 
@@ -239,7 +239,7 @@ fn draw_player(f: &mut Frame, app: &App, area: Rect) {
 
     let Some(track) = app.now_playing() else {
         f.render_widget(
-            Paragraph::new(Span::styled("silence... pick a song and press enter ♡", fg(DIM))),
+            Paragraph::new(Span::styled("silence... pick a song and press enter Ã¢â„¢Â¡", fg(DIM))),
             rows[0],
         );
         draw_volume(f, app, rows[2]);
@@ -247,17 +247,17 @@ fn draw_player(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let icon = if app.buffering {
-        "◌"
+        "Ã¢â€”Å’"
     } else if app.playing {
-        "▶"
+        "Ã¢â€“Â¶"
     } else {
-        "❚❚"
+        "Ã¢ÂÅ¡Ã¢ÂÅ¡"
     };
     f.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(format!("{icon} "), bold(HOT_PINK)),
             Span::styled(track.name.clone(), bold(WHITE)),
-            Span::styled(" — ", fg(DIM)),
+            Span::styled(" Ã¢â‚¬â€ ", fg(DIM)),
             Span::styled(track.artists.clone(), fg(PASTEL)),
         ])),
         rows[0],
@@ -283,11 +283,11 @@ fn draw_player(f: &mut Frame, app: &App, area: Rect) {
 fn draw_volume(f: &mut Frame, app: &App, area: Rect) {
     let filled = (app.volume as usize + 5) / 10;
     let mut spans = vec![Span::styled("vol ", fg(DIM))];
-    spans.push(Span::styled("♥".repeat(filled), fg(HOT_PINK)));
-    spans.push(Span::styled("♡".repeat(10 - filled.min(10)), fg(DIM)));
+    spans.push(Span::styled("Ã¢â„¢Â¥".repeat(filled), fg(HOT_PINK)));
+    spans.push(Span::styled("Ã¢â„¢Â¡".repeat(10 - filled.min(10)), fg(DIM)));
     spans.push(Span::styled(format!(" {}%", app.volume), fg(DIM)));
     if app.shuffle {
-        spans.push(Span::styled("   ⤨ shuffle", fg(LAVENDER)));
+        spans.push(Span::styled("   Ã¢Â¤Â¨ shuffle", fg(LAVENDER)));
     }
     spans.push(Span::styled(format!("   {}", app.status), fg(PINK)));
     f.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -296,10 +296,10 @@ fn draw_volume(f: &mut Frame, app: &App, area: Rect) {
 fn draw_hints(f: &mut Frame, area: Rect) {
     let keys = [
         ("/", "search"),
-        ("⏎", "play"),
+        ("Ã¢ÂÅ½", "play"),
         ("space", "pause"),
         ("n/p", "next/prev"),
-        ("←/→", "seek"),
+        ("Ã¢â€ Â/Ã¢â€ â€™", "seek"),
         ("+/-", "vol"),
         ("s", "shuffle"),
         ("tab", "menu"),
@@ -328,16 +328,16 @@ fn draw_help(f: &mut Frame, area: Rect) {
         ("enter", "play track / open playlist"),
         ("space", "pause / resume"),
         ("n / p", "next / previous track"),
-        ("← / →", "seek 10 seconds"),
+        ("Ã¢â€ Â / Ã¢â€ â€™", "seek 10 seconds"),
         ("+ / -", "volume up / down"),
         ("s", "toggle shuffle"),
         ("tab", "switch between menu and list"),
-        ("↑↓ / j k", "move"),
+        ("Ã¢â€ â€˜Ã¢â€ â€œ / j k", "move"),
         ("esc", "back to playlists"),
         ("q / ctrl+c", "quit"),
     ];
     let mut lines = vec![
-        Line::from(Span::styled("  ♡ how to use me ♡", bold(HOT_PINK))),
+        Line::from(Span::styled("  Ã¢â„¢Â¡ how to use me Ã¢â„¢Â¡", bold(HOT_PINK))),
         Line::from(""),
     ];
     for (k, v) in rows {
@@ -368,8 +368,8 @@ mod tests {
     fn fake_app() -> App {
         let mut app = App::new(70);
         app.user = "cutie".into();
-        app.on_msg(crate::app::Msg::Tracks {
-            title: "♥ liked songs".into(),
+        app.on_msg(crate::tui::app::Msg::Tracks {
+            title: "Ã¢â„¢Â¥ liked songs".into(),
             tracks: (1..=5)
                 .map(|i| Track {
                     uri: format!("spotify:track:{i}"),
@@ -377,6 +377,7 @@ mod tests {
                     artists: "some artist".into(),
                     album: "pink album".into(),
                     duration_ms: 180_000,
+                    ..Default::default()
                 })
                 .collect(),
         });

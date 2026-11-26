@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Femboy Spotify</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- ───────── top bar ───────── -->
+    <header class="topbar" data-tauri-drag-region>
+      <div class="top-left" data-tauri-drag-region>
+        <button class="icon-btn" id="btn-menu" title="about" data-icon="dots"></button>
+        <button class="icon-btn" id="btn-back" title="back" data-icon="chevron-left"></button>
+        <button class="icon-btn" id="btn-forward" title="forward" data-icon="chevron-right"></button>
+      </div>
+      <div class="top-center" data-tauri-drag-region>
+        <button class="home-btn" id="btn-home" title="home" data-icon="home"></button>
+        <label class="search">
+          <span class="search-icon" data-icon="search"></span>
+          <input id="search" type="text" placeholder="What do you want to play?" autocomplete="off" spellcheck="false">
+          <span class="search-sep"></span>
+          <button class="icon-btn small" id="btn-browse" title="your library" data-icon="browse"></button>
+        </label>
+      </div>
+      <div class="top-right" data-tauri-drag-region>
+        <button class="icon-btn" id="btn-bell" title="notifications" data-icon="bell"></button>
+        <button class="icon-btn" id="btn-friends" title="friends" data-icon="users"></button>
+        <button class="avatar" id="btn-avatar" title="account"><img id="avatar-img" alt=""></button>
+        <div class="win-controls">
+          <button class="icon-btn" id="win-min" title="minimize" data-icon="minimize"></button>
+          <button class="icon-btn" id="win-max" title="maximize" data-icon="maximize"></button>
+          <button class="icon-btn close" id="win-close" title="close" data-icon="close"></button>
+        </div>
+      </div>
+    </header>
+
+    <!-- ───────── left sidebar ───────── -->
+    <nav class="sidebar panel">
+      <button class="side-btn" data-nav="library" title="your library" data-icon="library"></button>
+      <button class="side-btn" data-nav="search" title="search" data-icon="plus-circle"></button>
+      <button class="side-btn" data-nav="liked" title="liked songs" data-icon="heart"></button>
+      <button class="side-btn" data-nav="queue" title="queue" data-icon="bookmark"></button>
+      <button class="side-btn" data-nav="recent" title="recently played" data-icon="pie"></button>
+      <button class="side-btn" data-nav="customize" title="customize ♡" data-icon="cat"></button>
+      <div class="side-sep"></div>
+      <div class="side-thumbs" id="side-thumbs"></div>
+      <button class="side-btn ribbon" data-nav="logout" title="log out" data-icon="ribbon"></button>
+    </nav>
+
+    <!-- ───────── main ───────── -->
+    <main class="main panel" id="main"></main>
+
+    <!-- ───────── right panel ───────── -->
+    <aside class="right panel" id="right">
+      <h3 class="right-title" id="right-title">Now playing</h3>
+      <div class="right-cover" id="right-cover"><div class="cover-placeholder" data-icon="heart"></div></div>
+      <div class="right-meta">
+        <div>
+          <div class="right-name" id="right-name">nothing yet~</div>
+          <div class="right-artist" id="right-artist">pick a song ♡</div>
+        </div>
+        <button class="icon-btn add-btn" id="right-add" title="add to liked songs" data-icon="plus-circle"></button>
+      </div>
+      <div class="lyrics-card" id="lyrics-card">
+        <button class="lyrics-head" id="lyrics-open">Lyrics preview</button>
+        <div class="lyrics-lines" id="lyrics-lines"></div>
+      </div>
+    </aside>
+
+    <!-- ───────── player bar ───────── -->
+    <footer class="player">
+      <div class="np">
+        <div class="np-cover" id="np-cover"><div class="cover-placeholder" data-icon="heart"></div></div>
+        <div class="np-text">
+          <div class="np-name" id="np-name">—</div>
+          <div class="np-artist" id="np-artist"></div>
+        </div>
+        <button class="icon-btn add-btn" id="np-add" title="add to liked songs" data-icon="plus-circle"></button>
+      </div>
+
+      <div class="controls">
+        <div class="buttons">
+          <button class="icon-btn" id="btn-shuffle" title="shuffle" data-icon="shuffle"></button>
+          <button class="icon-btn" id="btn-prev" title="previous" data-icon="prev"></button>
+          <button class="play-btn" id="btn-play" title="play" data-icon="play"></button>
+          <button class="icon-btn" id="btn-next" title="next" data-icon="next"></button>
+          <button class="icon-btn" id="btn-repeat" title="repeat" data-icon="repeat"></button>
+        </div>
+        <div class="progress">
+          <span id="time-pos">0:00</span>
+          <div class="bar" id="seek-bar"><div class="bar-fill" id="seek-fill"></div><div class="bar-knob" id="seek-knob"></div></div>
+          <span id="time-left">-0:00</span>
+        </div>
+      </div>
+
+      <div class="extras">
+        <button class="icon-btn ring active" id="btn-panel" title="now playing panel" data-icon="disc"></button>
+        <button class="icon-btn" id="btn-lyrics" title="lyrics" data-icon="pen"></button>
+        <button class="icon-btn" id="btn-queue" title="queue" data-icon="queue"></button>
+        <button class="icon-btn" id="btn-devices" title="devices" data-icon="devices"></button>
+        <button class="icon-btn" id="btn-mute" title="mute" data-icon="volume"></button>
+        <div class="bar volume" id="vol-bar"><div class="bar-fill" id="vol-fill"></div><div class="bar-knob" id="vol-knob"></div></div>
+        <button class="icon-btn" id="btn-mini" title="compact mode" data-icon="mini"></button>
+        <button class="icon-btn" id="btn-full" title="fullscreen" data-icon="fullscreen"></button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- login -->
+  <div class="overlay hidden" id="login">
+    <div class="card login-card">
+      <div class="login-heart" data-icon="heart"></div>
+      <h1>femboy spotify</h1>
+      <p id="login-text">sign in with your Spotify account to start listening ♡</p>
+      <button class="pink-btn" id="btn-login">sign in with Spotify</button>
+      <p class="hint">Spotify Premium is required. Your browser will open for sign-in.</p>
+    </div>
+  </div>
+
+  <!-- customize -->
+  <div class="overlay hidden" id="customize">
+    <div class="card custom-card">
+      <h2>customize ♡</h2>
+      <label class="field">banner picture
+        <input type="file" id="banner-file" accept="image/*">
+      </label>
+      <label class="field">banner title
+        <input type="text" id="banner-title" placeholder="e.g. Boykisser Mix" maxlength="40">
+      </label>
+      <div class="custom-actions">
+        <button class="chip" id="banner-reset">reset</button>
+        <button class="pink-btn" id="banner-save">save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="icons.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
