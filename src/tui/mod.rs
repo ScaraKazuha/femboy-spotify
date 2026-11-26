@@ -19,9 +19,9 @@ use app::{Action, App, Msg};
 const START_VOLUME: u16 = 70;
 
 pub async fn main() -> Result<()> {
-    let session = crate::auth::connect().await?;
-    let api = Api::new(session.clone());
-    let (player, player_events) = Player::new(session, START_VOLUME)?;
+    let login = crate::auth::connect().await?;
+    let api = Api::new(&login);
+    let (player, player_events) = Player::new(login.session, START_VOLUME)?;
 
     let mut terminal = ratatui::init();
     let result = run(&mut terminal, api, player, player_events).await;

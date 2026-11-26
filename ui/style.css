@@ -709,6 +709,40 @@ img { display: block; }
 .pink-btn:hover { transform: scale(1.04); }
 .pink-btn:disabled { opacity: .6; cursor: wait; transform: none; }
 
+.setup-card { width: 600px; max-height: 92vh; overflow-y: auto; }
+.setup-card h2 { margin: 0 0 8px; font-size: 30px; }
+.setup-intro { color: var(--plum-2); margin: 0 0 12px; line-height: 1.4; }
+.setup-steps { margin: 0 0 16px; padding-left: 22px; line-height: 1.55; }
+.setup-steps li { margin-bottom: 8px; }
+.setup-steps .chip { height: 30px; font-size: 14px; padding: 0 12px; }
+.chip.small { height: 26px; font-size: 13px; padding: 0 10px; }
+.copy-row { display: inline-flex; align-items: center; gap: 8px; margin: 2px 0; }
+.copy-row code {
+  background: #fff;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  padding: 2px 8px;
+  font-size: 14px;
+  user-select: all;
+  -webkit-user-select: all;
+}
+.setup-input { display: flex; gap: 10px; }
+.setup-input input {
+  flex: 1;
+  height: 50px;
+  border-radius: 14px;
+  border: 2px solid var(--line-strong);
+  background: #fff;
+  padding: 0 14px;
+  font: 500 17px var(--font);
+  color: var(--plum);
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.setup-input input:focus { border-color: var(--pink-2); }
+.setup-card .hint { font-size: 14px; color: var(--plum-soft); margin: 10px 0 0; }
+
 .custom-card { width: 440px; }
 .custom-card h2 { margin: 0 0 18px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-weight: 500; margin-bottom: 16px; }

@@ -25,6 +25,7 @@ fastrand = "2.5.0"
 futures-util = "0.3.34"
 librespot = { version = "0.8.0", default-features = false, features = ["rodio-backend", "rustls-tls-native-roots"] }
 log = "0.4.35"
+open = "5"
 ratatui = "0.30.2"
 reqwest = { version = "0.13.5", features = ["json"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }

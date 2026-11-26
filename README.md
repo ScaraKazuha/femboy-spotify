@@ -36,6 +36,16 @@ On first launch, click **sign in with Spotify**. Your browser opens the Spotify 
 After that, your login is saved (in your OS cache dir, `femboy-spotify/`), so next time the app starts right away.
 To log out, click the ribbon 🎀 at the bottom of the sidebar.
 
+### One-time setup: your own Client ID
+
+Music plays right after sign-in, but for your profile, playlists and search the app
+needs its own free **Client ID** (Spotify rate-limits the shared one that librespot uses).
+The app shows these steps after your first sign-in:
+
+1. Open the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and log in.
+2. **Create app** (any name), add the Redirect URI `http://127.0.0.1:8989/login`, tick **Web API**, save.
+3. Copy the app's **Client ID** into femboy spotify and click **connect**.
+
 Terminal version:
 
 ```sh

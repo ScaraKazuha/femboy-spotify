@@ -1,7 +1,9 @@
 //! Tiny Spotify Web API client (search, liked songs, playlists, lyrics).
 //!
-//! Access tokens come from the librespot session, so no separate
-//! developer app registration is needed.
+//! Uses the OAuth token from the browser sign-in (see `auth::WebAuth`), so no
+//! separate developer app registration is needed.
+
+use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use librespot::core::{SpotifyId, session::Session};
@@ -10,9 +12,9 @@ use reqwest::{Method, Url};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::auth::{Login, WebAuth};
+
 const BASE: &str = "https://api.spotify.com/v1";
-const SCOPES: &str = "user-read-private,playlist-read-private,playlist-read-collaborative,\
-user-library-read,user-library-modify,user-read-recently-played";
 
 /// Upper bound on how many items we pull from one list.
 const MAX_ITEMS: usize = 1000;
@@ -56,24 +58,20 @@ pub struct LyricLine {
 pub struct Api {
     http: reqwest::Client,
     session: Session,
+    web: Arc<WebAuth>,
 }
 
 impl Api {
-    pub fn new(session: Session) -> Self {
+    pub fn new(login: &Login) -> Self {
         Self {
             http: reqwest::Client::new(),
-            session,
+            session: login.session.clone(),
+            web: login.web.clone(),
         }
     }
 
     async fn token(&self) -> Result<String> {
-        let token = self
-            .session
-            .token_provider()
-            .get_token(SCOPES)
-            .await
-            .map_err(|e| anyhow!("could not get access token: {e}"))?;
-        Ok(token.access_token)
+        self.web.access_token().await
     }
 
     async fn send(&self, method: Method, url: Url) -> Result<Value> {

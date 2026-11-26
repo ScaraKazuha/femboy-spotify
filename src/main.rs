@@ -6,10 +6,9 @@ use std::sync::Arc;
 
 use femboy_spotify::{
     api::{Api, LyricLine, Me, Playlist, Track},
-    auth,
+    auth::{self, Login},
     player::Player,
 };
-use librespot::core::session::Session;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
 
@@ -17,6 +16,7 @@ use tokio::sync::RwLock;
 struct Core {
     api: Api,
     player: Player,
+    web: Arc<auth::WebAuth>,
 }
 
 #[derive(Default)]
@@ -51,8 +51,8 @@ impl AppState {
             .ok_or_else(|| "not logged in".to_string())
     }
 
-    async fn start(&self, app: &AppHandle, session: Session, volume: u16) -> CmdResult<()> {
-        let (player, mut events) = Player::new(session.clone(), volume).map_err(err)?;
+    async fn start(&self, app: &AppHandle, login: Login, volume: u16) -> CmdResult<()> {
+        let (player, mut events) = Player::new(login.session.clone(), volume).map_err(err)?;
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             while let Some(ev) = events.recv().await {
@@ -60,8 +60,9 @@ impl AppState {
             }
         });
         *self.core.write().await = Some(Arc::new(Core {
-            api: Api::new(session),
+            api: Api::new(&login),
             player,
+            web: login.web.clone(),
         }));
         Ok(())
     }
@@ -76,8 +77,8 @@ async fn init(app: AppHandle, state: State<'_, AppState>, volume: u16) -> CmdRes
         return Ok(true);
     }
     match auth::connect_cached().await.map_err(err)? {
-        Some(session) => {
-            state.start(&app, session, volume).await?;
+        Some(login) => {
+            state.start(&app, login, volume).await?;
             Ok(true)
         }
         None => Ok(false),
@@ -88,9 +89,9 @@ async fn init(app: AppHandle, state: State<'_, AppState>, volume: u16) -> CmdRes
 #[tauri::command]
 async fn login(app: AppHandle, state: State<'_, AppState>, volume: u16) -> CmdResult<()> {
     log_line("login: opening browser for Spotify sign-in");
-    let session = auth::login_interactive().await.map_err(err)?;
+    let login = auth::login_interactive().await.map_err(err)?;
     log_line("login: signed in, starting player");
-    state.start(&app, session, volume).await
+    state.start(&app, login, volume).await
 }
 
 #[tauri::command]
@@ -99,6 +100,40 @@ async fn logout(state: State<'_, AppState>) -> CmdResult<()> {
         core.player.pause();
     }
     auth::logout().map_err(err)
+}
+
+// ---------- own Client ID for the Web API ----------
+
+#[derive(serde::Serialize)]
+struct WebStatus {
+    ready: bool,
+    client_id: Option<String>,
+    redirect_uri: &'static str,
+}
+
+#[tauri::command]
+async fn web_status(state: State<'_, AppState>) -> CmdResult<WebStatus> {
+    let ready = match state.core.read().await.clone() {
+        Some(core) => core.web.is_ready().await,
+        None => false,
+    };
+    Ok(WebStatus {
+        ready,
+        client_id: auth::saved_client_id(),
+        redirect_uri: "http://127.0.0.1:8989/login",
+    })
+}
+
+#[tauri::command]
+async fn setup_web(state: State<'_, AppState>, client_id: String) -> CmdResult<()> {
+    log_line("web: setting up own Client ID");
+    state.core().await?.web.connect(&client_id).await.map_err(err)
+}
+
+/// Opens the Spotify developer dashboard (fixed address) in the default browser.
+#[tauri::command]
+fn open_dashboard() -> CmdResult<()> {
+    open::that(auth::DASHBOARD_URL).map_err(err)
 }
 
 // ---------- library ----------
@@ -184,6 +219,9 @@ fn main() {
             init,
             login,
             log_file,
+            web_status,
+            setup_web,
+            open_dashboard,
             logout,
             me,
             liked,

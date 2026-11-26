@@ -116,6 +116,7 @@ async function doSearch(q) {
 
 function fail(e) {
   console.error(e);
+  if (String(e).includes(WEB_NOT_SET_UP)) { showWebSetup(); return; }
   toast(`oopsie: ${e}`);
   if (S.view.loading) { S.view.loading = false; S.view.tracks = S.view.tracks || []; render(); }
 }
@@ -736,7 +737,7 @@ $('btn-login').onclick = async () => {
   try {
     await invoke('login', { volume: S.volume });
     $('login').classList.add('hidden');
-    await loadLibrary();
+    await afterLogin();
   } catch (e) {
     const log = await invoke('log_file').catch(() => '');
     const box = $('login-error');
@@ -747,6 +748,52 @@ $('btn-login').onclick = async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = 'sign in with Spotify';
+  }
+};
+
+/* ───────────── own Client ID (Web API) setup ───────────── */
+
+const WEB_NOT_SET_UP = 'web-api-not-set-up';
+
+async function afterLogin() {
+  const st = await invoke('web_status').catch(() => ({ ready: false }));
+  if (st.ready) return loadLibrary();
+  showWebSetup(st);
+}
+
+function showWebSetup(st) {
+  if (st?.client_id && !$('client-id').value) $('client-id').value = st.client_id;
+  $('websetup').classList.remove('hidden');
+}
+
+$('btn-dashboard').onclick = () => (DEMO ? window.open('https://developer.spotify.com/dashboard') : invoke('open_dashboard').catch(toast));
+$('btn-copy-uri').onclick = async () => {
+  try { await navigator.clipboard.writeText($('redirect-uri').textContent); toast('copied ♡'); } catch { toast('select the address and press ctrl+C'); }
+};
+$('client-id').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-setup').click(); });
+$('btn-setup').onclick = async () => {
+  const id = $('client-id').value.trim();
+  const btn = $('btn-setup');
+  const box = $('setup-error');
+  box.classList.add('hidden');
+  if (!/^[0-9a-fA-F]{32}$/.test(id)) {
+    box.textContent = "that doesn't look like a Client ID: it is 32 letters and digits (0-9, a-f).";
+    box.classList.remove('hidden');
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'check your browser...';
+  try {
+    await invoke('setup_web', { clientId: id });
+    $('websetup').classList.add('hidden');
+    toast('connected ♡ loading your library...');
+    await loadLibrary();
+  } catch (e) {
+    box.textContent = String(e);
+    box.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'connect';
   }
 };
 
@@ -787,7 +834,7 @@ async function start() {
   setInterval(tick, 250);
   try {
     const ok = await invoke('init', { volume: S.volume });
-    if (ok) await loadLibrary();
+    if (ok) await afterLogin();
     else $('login').classList.remove('hidden');
   } catch (e) {
     toast(`couldn't start: ${e}`);
@@ -816,6 +863,8 @@ async function demoInvoke(cmd, args = {}) {
   await new Promise((r) => setTimeout(r, 120));
   switch (cmd) {
     case 'init': return true;
+    case 'web_status': return { ready: !location.search.includes('setup'), client_id: null };
+    case 'setup_web': return null;
     case 'me': return { name: 'cutie', avatar: demoCover(4, '') };
     case 'playlists': return DEMO_PLAYLISTS;
     case 'liked': case 'recent': case 'playlist_tracks': return DEMO_TRACKS;
