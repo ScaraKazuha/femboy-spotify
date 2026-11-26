@@ -20,9 +20,9 @@ impl Section {
 
     pub fn label(self) -> &'static str {
         match self {
-            Section::Search => "âœ¿ search",
-            Section::Liked => "â™¥ liked songs",
-            Section::Playlists => "â™« playlists",
+            Section::Search => "✿ search",
+            Section::Liked => "♥ liked songs",
+            Section::Playlists => "♫ playlists",
         }
     }
 
@@ -111,7 +111,7 @@ impl App {
             position_at: Instant::now(),
             volume,
             shuffle: false,
-            status: "hiii~ loading your liked songs â™¡".into(),
+            status: "hiii~ loading your liked songs ♡".into(),
             loading: true,
             user: String::new(),
             tick: 0,
@@ -155,9 +155,9 @@ impl App {
             }
             Msg::Tracks { title, tracks } => {
                 self.status = if tracks.is_empty() {
-                    "nothing found... (ï½¡â€¢Ìï¸¿â€¢Ì€ï½¡)".into()
+                    "nothing found... (｡•́︿•̀｡)".into()
                 } else {
-                    format!("{} tracks â™¡", tracks.len())
+                    format!("{} tracks ♡", tracks.len())
                 };
                 self.title = title;
                 self.tracks = tracks;
@@ -165,7 +165,7 @@ impl App {
                 self.track_state.select(if self.tracks.is_empty() { None } else { Some(0) });
             }
             Msg::Playlists(pls) => {
-                self.status = format!("{} playlists â™¡", pls.len());
+                self.status = format!("{} playlists ♡", pls.len());
                 self.title = Section::Playlists.label().into();
                 self.playlists = pls;
                 self.content = Content::Playlists;
@@ -211,7 +211,7 @@ impl App {
         self.playing = true;
         self.buffering = true;
         self.set_position(0);
-        self.status = format!("â™ª {} â€” {}", track.name, track.artists);
+        self.status = format!("♪ {} — {}", track.name, track.artists);
         Some(Action::Play(track.uri))
     }
 
@@ -230,7 +230,7 @@ impl App {
             pos + 1
         } else {
             self.playing = false;
-            self.status = "end of the queue~ pick something else â™¡".into();
+            self.status = "end of the queue~ pick something else ♡".into();
             return None;
         };
         self.play_index(next)
@@ -312,7 +312,7 @@ impl App {
             KeyCode::Char('-') | KeyCode::Char('_') => return self.change_volume(-5),
             KeyCode::Char('s') => {
                 self.shuffle = !self.shuffle;
-                self.status = if self.shuffle { "shuffle on âœ§" } else { "shuffle off" }.into();
+                self.status = if self.shuffle { "shuffle on ✧" } else { "shuffle off" }.into();
             }
             KeyCode::Up | KeyCode::Char('k') => self.move_cursor(-1),
             KeyCode::Down | KeyCode::Char('j') => self.move_cursor(1),

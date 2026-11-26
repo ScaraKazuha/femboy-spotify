@@ -679,6 +679,22 @@ img { display: block; }
 .login-heart { width: 150px; height: 150px; margin: 0 auto; display: block; animation: beat 1.4s ease-in-out infinite; }
 @keyframes beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.12); } 30% { transform: scale(1); } 45% { transform: scale(1.08); } }
 
+.login-error {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #ffe1ea;
+  border: 2px solid #ff8aa8;
+  color: #8a1f45;
+  font-size: 14px;
+  text-align: left;
+  user-select: text;
+  -webkit-user-select: text;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
 .pink-btn {
   height: 50px;
   padding: 0 28px;

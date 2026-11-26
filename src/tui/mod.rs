@@ -106,13 +106,13 @@ fn perform(action: Action, api: &Api, player: &Player, tx: &mpsc::UnboundedSende
             Ok(Msg::Tracks { title: format!("results for \"{q}\""), tracks })
         }),
         Action::LoadLiked => spawn(api, tx, |api| async move {
-            Ok(Msg::Tracks { title: "â™¥ liked songs".into(), tracks: api.liked().await? })
+            Ok(Msg::Tracks { title: "♥ liked songs".into(), tracks: api.liked().await? })
         }),
         Action::LoadPlaylists => spawn(api, tx, |api| async move {
             Ok(Msg::Playlists(api.playlists().await?))
         }),
         Action::LoadPlaylist { id, name } => spawn(api, tx, move |api| async move {
-            Ok(Msg::Tracks { title: format!("â™« {name}"), tracks: api.playlist_tracks(&id).await? })
+            Ok(Msg::Tracks { title: format!("♫ {name}"), tracks: api.playlist_tracks(&id).await? })
         }),
     }
 }

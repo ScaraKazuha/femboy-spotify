@@ -58,13 +58,16 @@ pub async fn login_interactive() -> Result<Session> {
     let config = SessionConfig::default();
     let client = OAuthClientBuilder::new(&config.client_id, REDIRECT_URI, SCOPES.to_vec())
         .open_in_browser()
-        .with_custom_message("all done! you can go back to femboy spotify now â™¡")
+        .with_custom_message("all done! you can go back to femboy spotify now <3")
         .build()
         .context("could not start OAuth sign-in")?;
-    let token = client
-        .get_access_token_async()
-        .await
-        .context("Spotify sign-in failed")?;
+    let token = tokio::time::timeout(
+        std::time::Duration::from_secs(300),
+        client.get_access_token_async(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("sign-in timed out (no answer from the browser in 5 minutes)"))?
+    .context("Spotify sign-in failed")?;
 
     let session = Session::new(config, Some(cache()?));
     session
@@ -90,7 +93,7 @@ pub async fn connect() -> Result<Session> {
         return Ok(session);
     }
     println!();
-    println!("  \x1b[38;2;255;92;170mâ™¡ femboy spotify â™¡\x1b[0m");
+    println!("  \x1b[38;2;255;92;170m♡ femboy spotify ♡\x1b[0m");
     println!("  opening your browser to sign in to Spotify (Premium required)...");
     println!("  if it does not open, copy the link printed below into your browser.");
     println!();

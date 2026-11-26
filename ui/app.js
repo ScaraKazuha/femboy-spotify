@@ -731,14 +731,19 @@ $('btn-login').onclick = async () => {
   const btn = $('btn-login');
   btn.disabled = true;
   btn.textContent = 'waiting for the browser...';
+  $('login-error').classList.add('hidden');
   $('login-text').textContent = 'finish signing in in your browser, then come back here ♡';
   try {
     await invoke('login', { volume: S.volume });
     $('login').classList.add('hidden');
     await loadLibrary();
   } catch (e) {
-    toast(`sign-in failed: ${e}`);
-    $('login-text').textContent = 'sign in with your Spotify account to start listening ♡';
+    const log = await invoke('log_file').catch(() => '');
+    const box = $('login-error');
+    box.textContent = `sign-in failed: ${e}${log ? `\n\nlog: ${log}` : ''}`;
+    box.style.whiteSpace = 'pre-wrap';
+    box.classList.remove('hidden');
+    $('login-text').textContent = 'something went wrong (｡•́︿•̀｡) you can try again:';
   } finally {
     btn.disabled = false;
     btn.textContent = 'sign in with Spotify';

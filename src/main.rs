@@ -26,8 +26,36 @@ struct AppState {
 
 type CmdResult<T> = Result<T, String>;
 
+/// Turns an error into a message for the UI and appends it to the log file.
 fn err(e: impl std::fmt::Display) -> String {
-    format!("{e:#}")
+    let msg = format!("{e:#}");
+    log_line(&format!("error: {msg}"));
+    msg
+}
+
+fn log_path() -> std::path::PathBuf {
+    auth::data_dir().join("femboy-spotify.log")
+}
+
+fn log_line(line: &str) {
+    use std::io::Write;
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = std::fs::create_dir_all(auth::data_dir());
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path())
+    {
+        let _ = writeln!(f, "[{secs}] {line}");
+    }
+}
+
+#[tauri::command]
+fn log_file() -> String {
+    log_path().display().to_string()
 }
 
 impl AppState {
@@ -75,7 +103,9 @@ async fn init(app: AppHandle, state: State<'_, AppState>, volume: u16) -> CmdRes
 /// Opens the browser for Spotify sign-in.
 #[tauri::command]
 async fn login(app: AppHandle, state: State<'_, AppState>, volume: u16) -> CmdResult<()> {
+    log_line("login: opening browser for Spotify sign-in");
     let session = auth::login_interactive().await.map_err(err)?;
+    log_line("login: signed in, starting player");
     state.start(&app, session, volume).await
 }
 
@@ -166,6 +196,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             init,
             login,
+            log_file,
             logout,
             me,
             liked,
