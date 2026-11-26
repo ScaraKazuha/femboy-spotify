@@ -110,6 +110,11 @@
         <button class="icon-btn" id="btn-full" title="fullscreen" data-icon="fullscreen"></button>
       </div>
     </footer>
+
+    <!-- cat ears on top of every panel ฅ^•ﻌ•^ฅ -->
+    <div class="ears ears-side" aria-hidden="true"><span class="ear l"></span><span class="ear r"></span></div>
+    <div class="ears ears-main" aria-hidden="true"><span class="ear l"></span><span class="ear r"></span></div>
+    <div class="ears ears-right" aria-hidden="true"><span class="ear l"></span><span class="ear r"></span></div>
   </div>
 
   <!-- login -->
@@ -121,32 +126,6 @@
       <button class="pink-btn" id="btn-login">sign in with Spotify</button>
       <div class="login-error hidden" id="login-error"></div>
       <p class="hint">Spotify Premium is required. Your browser will open for sign-in.</p>
-    </div>
-  </div>
-
-  <!-- own Client ID for the Web API -->
-  <div class="overlay hidden" id="websetup">
-    <div class="card setup-card">
-      <h2>one last step ♡</h2>
-      <p class="setup-intro">Music already works! To load your profile, playlists and search,
-        Spotify wants every app to have its own free <b>Client ID</b>. It takes about 2 minutes:</p>
-      <ol class="setup-steps">
-        <li><button class="chip" id="btn-dashboard">open Spotify Developer Dashboard</button>
-          and log in with your Spotify account.</li>
-        <li>Click <b>Create app</b>. Name and description: anything (e.g. <i>femboy spotify</i>).</li>
-        <li>In <b>Redirect URIs</b> add
-          <span class="copy-row"><code id="redirect-uri">http://127.0.0.1:8989/login</code>
-          <button class="chip small" id="btn-copy-uri">copy</button></span>
-          then click <b>Add</b>.</li>
-        <li>Under <b>Which API/SDKs are you planning to use?</b> tick <b>Web API</b>, accept the terms, <b>Save</b>.</li>
-        <li>Open your new app, copy its <b>Client ID</b> and paste it here:</li>
-      </ol>
-      <div class="setup-input">
-        <input type="text" id="client-id" placeholder="Client ID (32 characters)" maxlength="40" spellcheck="false" autocomplete="off">
-        <button class="pink-btn" id="btn-setup">connect</button>
-      </div>
-      <p class="hint">Your browser will ask you to allow your new app. The Client ID is saved on this computer only.</p>
-      <div class="login-error hidden" id="setup-error"></div>
     </div>
   </div>
 

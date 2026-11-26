@@ -16,7 +16,6 @@ use tokio::sync::RwLock;
 struct Core {
     api: Api,
     player: Player,
-    web: Arc<auth::WebAuth>,
 }
 
 #[derive(Default)]
@@ -62,7 +61,6 @@ impl AppState {
         *self.core.write().await = Some(Arc::new(Core {
             api: Api::new(&login),
             player,
-            web: login.web.clone(),
         }));
         Ok(())
     }
@@ -102,40 +100,6 @@ async fn logout(state: State<'_, AppState>) -> CmdResult<()> {
     auth::logout().map_err(err)
 }
 
-// ---------- own Client ID for the Web API ----------
-
-#[derive(serde::Serialize)]
-struct WebStatus {
-    ready: bool,
-    client_id: Option<String>,
-    redirect_uri: &'static str,
-}
-
-#[tauri::command]
-async fn web_status(state: State<'_, AppState>) -> CmdResult<WebStatus> {
-    let ready = match state.core.read().await.clone() {
-        Some(core) => core.web.is_ready().await,
-        None => false,
-    };
-    Ok(WebStatus {
-        ready,
-        client_id: auth::saved_client_id(),
-        redirect_uri: "http://127.0.0.1:8989/login",
-    })
-}
-
-#[tauri::command]
-async fn setup_web(state: State<'_, AppState>, client_id: String) -> CmdResult<()> {
-    log_line("web: setting up own Client ID");
-    state.core().await?.web.connect(&client_id).await.map_err(err)
-}
-
-/// Opens the Spotify developer dashboard (fixed address) in the default browser.
-#[tauri::command]
-fn open_dashboard() -> CmdResult<()> {
-    open::that(auth::DASHBOARD_URL).map_err(err)
-}
-
 // ---------- library ----------
 
 #[tauri::command]
@@ -146,11 +110,6 @@ async fn me(state: State<'_, AppState>) -> CmdResult<Me> {
 #[tauri::command]
 async fn liked(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
     state.core().await?.api.liked().await.map_err(err)
-}
-
-#[tauri::command]
-async fn recent(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
-    state.core().await?.api.recent().await.map_err(err)
 }
 
 #[tauri::command]
@@ -219,13 +178,9 @@ fn main() {
             init,
             login,
             log_file,
-            web_status,
-            setup_web,
-            open_dashboard,
             logout,
             me,
             liked,
-            recent,
             playlists,
             playlist_tracks,
             search,

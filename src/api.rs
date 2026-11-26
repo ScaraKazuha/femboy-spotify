@@ -1,23 +1,32 @@
-//! Tiny Spotify Web API client (search, liked songs, playlists, lyrics).
+//! Library data straight from Spotify's internal services (the same ones the
+//! official app uses), over the librespot session.
 //!
-//! Uses the OAuth token from the browser sign-in (see `auth::WebAuth`), so no
-//! separate developer app registration is needed.
+//! The public Web API (api.spotify.com) is not used: librespot's shared Client ID
+//! is permanently rate limited there. Everything here works right after sign-in.
 
-use std::sync::Arc;
+use std::collections::HashMap;
 
-use anyhow::{Result, anyhow};
-use librespot::core::{SpotifyId, session::Session};
-use librespot::metadata::Lyrics;
-use reqwest::{Method, Url};
+use anyhow::{Context, Result, anyhow};
+use futures_util::{StreamExt, stream};
+use librespot::core::{SpotifyId, SpotifyUri, session::Session};
+use librespot::metadata::{Lyrics, Metadata, Track as LsTrack};
+use librespot::protocol::{
+    extended_metadata::{BatchedEntityRequest, EntityRequest, ExtensionQuery},
+    extension_kind::ExtensionKind,
+    metadata::Track as TrackProto,
+    playlist4_external::SelectedListContent,
+};
+use protobuf::{EnumOrUnknown, Message};
+use reqwest::Method;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::auth::{Login, WebAuth};
+use crate::auth::Login;
 
-const BASE: &str = "https://api.spotify.com/v1";
-
-/// Upper bound on how many items we pull from one list.
-const MAX_ITEMS: usize = 1000;
+/// Upper bound on how many tracks we pull from one list.
+const MAX_ITEMS: usize = 2000;
+/// Tracks per extended-metadata request.
+const BATCH: usize = 100;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Track {
@@ -56,88 +65,53 @@ pub struct LyricLine {
 
 #[derive(Clone)]
 pub struct Api {
-    http: reqwest::Client,
     session: Session,
-    web: Arc<WebAuth>,
+}
+
+fn image_url(hex: &str) -> String {
+    format!("https://i.scdn.co/image/{hex}")
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Percent-encodes a search query for a `spotify:search:` URI (spaces become `+`).
+fn encode_query(q: &str) -> String {
+    let mut out = String::new();
+    for b in q.trim().bytes() {
+        match b {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 impl Api {
     pub fn new(login: &Login) -> Self {
         Self {
-            http: reqwest::Client::new(),
             session: login.session.clone(),
-            web: login.web.clone(),
         }
     }
 
-    async fn token(&self) -> Result<String> {
-        self.web.access_token().await
-    }
-
-    async fn send(&self, method: Method, url: Url) -> Result<Value> {
-        for _ in 0..3 {
-            let resp = self
-                .http
-                .request(method.clone(), url.clone())
-                .bearer_auth(self.token().await?)
-                .header("content-length", "0")
-                .send()
-                .await?;
-            let status = resp.status();
-            if status.as_u16() == 429 {
-                let wait = resp
-                    .headers()
-                    .get("retry-after")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(2)
-                    .min(10);
-                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
-                continue;
-            }
-            if !status.is_success() {
-                let body = resp.text().await.unwrap_or_default();
-                return Err(anyhow!("Spotify API {status}: {}", body.trim()));
-            }
-            let body = resp.text().await?;
-            if body.trim().is_empty() {
-                return Ok(Value::Null);
-            }
-            return Ok(serde_json::from_str(&body)?);
-        }
-        Err(anyhow!("Spotify API is rate limiting us, try again later"))
-    }
-
-    async fn get(&self, url: Url) -> Result<Value> {
-        self.send(Method::GET, url).await
-    }
-
-    /// Follows `next` links of a paging object and collects every item.
-    async fn paged(&self, first: Url) -> Result<Vec<Value>> {
-        let mut items = Vec::new();
-        let mut next = Some(first);
-        while let Some(url) = next.take() {
-            let page = self.get(url).await?;
-            if let Some(arr) = page["items"].as_array() {
-                items.extend(arr.iter().cloned());
-            }
-            if items.len() >= MAX_ITEMS {
-                break;
-            }
-            next = page["next"].as_str().and_then(|s| Url::parse(s).ok());
-        }
-        Ok(items)
+    async fn json(&self, endpoint: &str) -> Result<Value> {
+        let bytes = self
+            .session
+            .spclient()
+            .request_as_json(&Method::GET, endpoint, None, None)
+            .await
+            .map_err(|e| anyhow!("Spotify request failed: {e}"))?;
+        Ok(serde_json::from_slice(&bytes)?)
     }
 
     pub async fn me(&self) -> Result<Me> {
-        let me = self.get(Url::parse(&format!("{BASE}/me"))?).await?;
+        let user = self.session.username();
+        let p = self.json(&format!("/user-profile-view/v3/profile/{user}?playlist_limit=0&artist_limit=0")).await?;
         Ok(Me {
-            name: me["display_name"]
-                .as_str()
-                .or(me["id"].as_str())
-                .unwrap_or("cutie")
-                .to_string(),
-            avatar: pick_image(&me["images"], 160),
+            name: p["name"].as_str().unwrap_or(&user).to_string(),
+            avatar: p["image_url"].as_str().filter(|s| !s.is_empty()).map(String::from),
         })
     }
 
@@ -145,96 +119,235 @@ impl Api {
         Ok(self.me().await?.name)
     }
 
+    /// Metadata for many tracks at once, in the given order (unknown ones are skipped).
+    async fn tracks(&self, uris: &[String]) -> Result<Vec<Track>> {
+        let uris: Vec<String> = uris
+            .iter()
+            .filter(|u| u.starts_with("spotify:track:"))
+            .take(MAX_ITEMS)
+            .cloned()
+            .collect();
+        let chunks: Vec<Vec<String>> = uris.chunks(BATCH).map(|c| c.to_vec()).collect();
+        let api = self.clone();
+        let results: Vec<Result<HashMap<String, Track>>> = stream::iter(chunks)
+            .map(move |chunk| {
+                let api = api.clone();
+                async move { api.track_batch(chunk).await }
+            })
+            .buffered(4)
+            .collect()
+            .await;
+        let mut by_uri = HashMap::new();
+        for r in results {
+            by_uri.extend(r?);
+        }
+        Ok(uris.iter().filter_map(|u| by_uri.remove(u)).collect())
+    }
+
+    async fn track_batch(&self, uris: Vec<String>) -> Result<HashMap<String, Track>> {
+        let req = BatchedEntityRequest {
+            entity_request: uris
+                .iter()
+                .map(|u| EntityRequest {
+                    entity_uri: u.to_string(),
+                    query: vec![ExtensionQuery {
+                        extension_kind: EnumOrUnknown::new(ExtensionKind::TRACK_V4),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let res = self
+            .session
+            .spclient()
+            .get_extended_metadata(req)
+            .await
+            .map_err(|e| anyhow!("could not load track info: {e}"))?;
+
+        let mut out = HashMap::new();
+        for em in res.extended_metadata {
+            for data in em.extension_data {
+                let uri = data.entity_uri.clone();
+                let Some(any) = data.extension_data.as_ref() else { continue };
+                let Ok(msg) = TrackProto::parse_from_bytes(&any.value) else { continue };
+                let Ok(id) = SpotifyUri::from_uri(&uri) else { continue };
+                let Ok(t) = LsTrack::parse(&msg, &id) else { continue };
+                out.insert(uri.clone(), convert_track(&uri, &t));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Track URIs of a context ("spotify:user:…:collection", "spotify:search:…"), following pages.
+    async fn context_uris(&self, context: &str, limit: usize) -> Result<Vec<String>> {
+        let ctx = self.json(&format!("/context-resolve/v1/{context}")).await?;
+        let mut uris = Vec::new();
+        let mut pending: Vec<String> = Vec::new();
+        for page in ctx["pages"].as_array().cloned().unwrap_or_default() {
+            collect_page(&page, &mut uris, &mut pending);
+        }
+        while let Some(url) = pending.pop() {
+            if uris.len() >= limit {
+                break;
+            }
+            let path = url.trim_start_matches("hm://");
+            match self.json(&format!("/{path}")).await {
+                Ok(page) => collect_page(&page, &mut uris, &mut pending),
+                Err(e) => {
+                    crate::auth::log(&format!("context page failed: {e:#}"));
+                    break;
+                }
+            }
+        }
+        uris.truncate(limit);
+        Ok(uris)
+    }
+
     pub async fn search(&self, query: &str) -> Result<Vec<Track>> {
-        let url = Url::parse_with_params(
-            &format!("{BASE}/search"),
-            &[("q", query), ("type", "track"), ("limit", "50")],
-        )?;
-        let page = self.get(url).await?;
-        Ok(page["tracks"]["items"]
-            .as_array()
-            .map(|a| a.iter().filter_map(parse_track).collect())
-            .unwrap_or_default())
+        let uris = self
+            .context_uris(&format!("spotify:search:{}", encode_query(query)), 50)
+            .await?;
+        self.tracks(&uris).await
     }
 
     pub async fn liked(&self) -> Result<Vec<Track>> {
-        let url = Url::parse(&format!("{BASE}/me/tracks?limit=50"))?;
-        Ok(self
-            .paged(url)
-            .await?
-            .iter()
-            .filter_map(|item| parse_track(&item["track"]))
-            .collect())
+        let user = self.session.username();
+        let uris = self
+            .context_uris(&format!("spotify:user:{user}:collection"), MAX_ITEMS)
+            .await?;
+        self.tracks(&uris).await
     }
 
-    pub async fn recent(&self) -> Result<Vec<Track>> {
-        let url = Url::parse(&format!("{BASE}/me/player/recently-played?limit=50"))?;
-        let page = self.get(url).await?;
-        let mut seen = std::collections::HashSet::new();
-        Ok(page["items"]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|item| parse_track(&item["track"]))
-                    .filter(|t| seen.insert(t.uri.clone()))
-                    .collect()
-            })
-            .unwrap_or_default())
-    }
-
-    pub async fn save_track(&self, id: &str) -> Result<()> {
-        let url = Url::parse_with_params(&format!("{BASE}/me/tracks"), &[("ids", id)])?;
-        self.send(Method::PUT, url).await?;
-        Ok(())
+    async fn playlist_raw(&self, id: &str) -> Result<SelectedListContent> {
+        let sid = SpotifyId::from_base62(id).map_err(|e| anyhow!("bad playlist id: {e}"))?;
+        let bytes = self
+            .session
+            .spclient()
+            .get_playlist(&sid)
+            .await
+            .map_err(|e| anyhow!("could not load playlist: {e}"))?;
+        Ok(SelectedListContent::parse_from_bytes(&bytes)?)
     }
 
     pub async fn playlists(&self) -> Result<Vec<Playlist>> {
-        let url = Url::parse(&format!("{BASE}/me/playlists?limit=50"))?;
-        Ok(self
-            .paged(url)
-            .await?
+        let bytes = self
+            .session
+            .spclient()
+            .get_rootlist(0, Some(500))
+            .await
+            .map_err(|e| anyhow!("could not load your playlists: {e}"))?;
+        let root = SelectedListContent::parse_from_bytes(&bytes)?;
+        let ids: Vec<String> = root
+            .contents
+            .items
             .iter()
-            .filter_map(|p| {
-                let total = p["tracks"]["total"]
-                    .as_u64()
-                    .or(p["items"]["total"].as_u64())
-                    .unwrap_or(0);
-                Some(Playlist {
-                    id: p["id"].as_str()?.to_string(),
-                    name: p["name"].as_str().unwrap_or("untitled").to_string(),
-                    owner: p["owner"]["display_name"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_string(),
-                    total,
-                    image: pick_image(&p["images"], 300),
-                })
+            .filter_map(|i| i.uri().strip_prefix("spotify:playlist:").map(String::from))
+            .collect();
+
+        let me = self.session.username();
+        let api = self.clone();
+        let raws: Vec<(String, Result<SelectedListContent>)> = stream::iter(ids)
+            .map(move |id| {
+                let api = api.clone();
+                async move {
+                    let r = api.playlist_raw(&id).await;
+                    (id, r)
+                }
+            })
+            .buffered(8)
+            .collect()
+            .await;
+
+        // playlists without their own picture get the cover of their first track
+        let mut need_cover = Vec::new();
+        let mut out = Vec::new();
+        for (id, raw) in raws {
+            let Ok(pl) = raw else { continue };
+            if pl.length() <= 0 {
+                continue; // e.g. the "DJ" pseudo-playlist
+            }
+            let picture = pl.attributes.picture();
+            let image = (!picture.is_empty()).then(|| image_url(&hex(picture)));
+            if image.is_none() {
+                if let Some(first) = pl.contents.items.iter().find(|i| i.uri().starts_with("spotify:track:")) {
+                    need_cover.push(first.uri().to_string());
+                }
+            }
+            let owner = pl.owner_username();
+            out.push((
+                pl.contents
+                    .items
+                    .iter()
+                    .find(|i| i.uri().starts_with("spotify:track:"))
+                    .map(|i| i.uri().to_string()),
+                Playlist {
+                    id,
+                    name: pl.attributes.name().to_string(),
+                    owner: if owner == me {
+                        "you".into()
+                    } else if owner == "spotify" {
+                        "Spotify".into()
+                    } else {
+                        String::new() // other users only have opaque ids here
+                    },
+                    total: pl.length().max(0) as u64,
+                    image,
+                },
+            ));
+        }
+        let covers: HashMap<String, Option<String>> = self
+            .tracks(&need_cover)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|t| (t.uri, t.image))
+            .collect();
+        Ok(out
+            .into_iter()
+            .map(|(first, mut p)| {
+                if p.image.is_none() {
+                    p.image = first.and_then(|u| covers.get(&u).cloned().flatten());
+                }
+                p
             })
             .collect())
     }
 
     pub async fn playlist_tracks(&self, id: &str) -> Result<Vec<Track>> {
-        // Newer API versions renamed `/tracks` to `/items`; try both.
-        let mut last_err = None;
-        for endpoint in ["items", "tracks"] {
-            let url = Url::parse(&format!("{BASE}/playlists/{id}/{endpoint}?limit=100"))?;
-            match self.paged(url).await {
-                Ok(items) => {
-                    return Ok(items
-                        .iter()
-                        .filter_map(|it| {
-                            let t = it
-                                .get("track")
-                                .filter(|t| !t.is_null())
-                                .unwrap_or(&it["item"]);
-                            parse_track(t)
-                        })
-                        .collect());
-                }
-                Err(e) => last_err = Some(e),
-            }
-        }
-        Err(last_err.unwrap_or_else(|| anyhow!("could not load playlist")))
+        let pl = self.playlist_raw(id).await?;
+        let uris: Vec<String> = pl.contents.items.iter().map(|i| i.uri().to_string()).collect();
+        self.tracks(&uris).await
+    }
+
+    /// Adds a track to Liked Songs (collection v2 write, protobuf encoded by hand).
+    pub async fn save_track(&self, id: &str) -> Result<()> {
+        let user = self.session.username();
+        let added_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let mut item = Vec::new();
+        pb_string(&mut item, 1, &format!("spotify:track:{id}"));
+        pb_varint_field(&mut item, 2, added_at);
+        let mut body = Vec::new();
+        pb_string(&mut body, 1, &user);
+        pb_string(&mut body, 2, "collection");
+        pb_bytes(&mut body, 3, &item);
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/vnd.collection-v2.spotify.proto"),
+        );
+        self.session
+            .spclient()
+            .request(&Method::POST, "/collection/v2/write", Some(headers), Some(&body))
+            .await
+            .map_err(|e| anyhow!("could not add to Liked Songs: {e}"))
+            .context("save track")?;
+        Ok(())
     }
 
     /// Time-synced (when available) lyrics of a track. `None` if Spotify has none.
@@ -257,45 +370,84 @@ impl Api {
     }
 }
 
-/// Picks the smallest image at least `target` px wide (or the biggest one available).
-fn pick_image(images: &Value, target: u64) -> Option<String> {
-    let arr = images.as_array()?;
-    let mut best: Option<(u64, &str)> = None;
-    for img in arr {
-        let Some(url) = img["url"].as_str() else { continue };
-        let w = img["width"].as_u64().unwrap_or(0);
-        best = match best {
-            None => Some((w, url)),
-            Some((bw, _)) if w >= target && (bw < target || w < bw) => Some((w, url)),
-            Some((bw, _)) if bw < target && w > bw => Some((w, url)),
-            keep => keep,
-        };
+fn collect_page(page: &Value, uris: &mut Vec<String>, pending: &mut Vec<String>) {
+    if let Some(tracks) = page["tracks"].as_array() {
+        uris.extend(tracks.iter().filter_map(|t| t["uri"].as_str().map(String::from)));
+    } else if let Some(url) = page["page_url"].as_str() {
+        pending.insert(0, url.to_string());
     }
-    best.map(|(_, u)| u.to_string())
+    if let Some(next) = page["next_page_url"].as_str() {
+        pending.insert(0, next.to_string());
+    }
 }
 
-fn parse_track(t: &Value) -> Option<Track> {
-    let uri = t["uri"].as_str()?;
-    if !uri.starts_with("spotify:track:") {
-        return None; // local files, podcast episodes, etc.
-    }
-    let artists = t["artists"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|x| x["name"].as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        })
-        .unwrap_or_default();
-    Some(Track {
+fn convert_track(uri: &str, t: &LsTrack) -> Track {
+    let covers = &t.album.covers.0;
+    let pick = |w: i32| {
+        covers
+            .iter()
+            .find(|c| c.width == w)
+            .or_else(|| covers.iter().max_by_key(|c| c.width))
+            .and_then(|c| c.id.to_base16().ok())
+            .map(|h| image_url(&h))
+    };
+    Track {
         id: uri.trim_start_matches("spotify:track:").to_string(),
         uri: uri.to_string(),
-        name: t["name"].as_str().unwrap_or("?").to_string(),
-        artists,
-        album: t["album"]["name"].as_str().unwrap_or("").to_string(),
-        duration_ms: t["duration_ms"].as_u64().unwrap_or(0),
-        image: pick_image(&t["album"]["images"], 300),
-        image_large: pick_image(&t["album"]["images"], 640),
-    })
+        name: t.name.clone(),
+        artists: t
+            .artists
+            .0
+            .iter()
+            .map(|a| a.name.clone())
+            .collect::<Vec<_>>()
+            .join(", "),
+        album: t.album.name.clone(),
+        duration_ms: t.duration.max(0) as u64,
+        image: pick(300),
+        image_large: pick(640),
+    }
+}
+
+// ---- minimal protobuf encoding for the collection write ----
+
+fn pb_varint(buf: &mut Vec<u8>, mut v: u64) {
+    while v >= 0x80 {
+        buf.push((v as u8) | 0x80);
+        v >>= 7;
+    }
+    buf.push(v as u8);
+}
+
+fn pb_varint_field(buf: &mut Vec<u8>, field: u32, v: u64) {
+    pb_varint(buf, (field as u64) << 3);
+    pb_varint(buf, v);
+}
+
+fn pb_bytes(buf: &mut Vec<u8>, field: u32, data: &[u8]) {
+    pb_varint(buf, ((field as u64) << 3) | 2);
+    pb_varint(buf, data.len() as u64);
+    buf.extend_from_slice(data);
+}
+
+fn pb_string(buf: &mut Vec<u8>, field: u32, s: &str) {
+    pb_bytes(buf, field, s.as_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_query_encoding() {
+        assert_eq!(encode_query("pink sky"), "pink+sky");
+        assert_eq!(encode_query("a&b/ü"), "a%26b%2F%C3%BC");
+    }
+
+    #[test]
+    fn protobuf_varint() {
+        let mut b = Vec::new();
+        pb_varint(&mut b, 300);
+        assert_eq!(b, [0xAC, 0x02]);
+    }
 }

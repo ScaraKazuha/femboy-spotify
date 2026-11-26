@@ -84,10 +84,15 @@ async function openLiked() {
   S.liked.forEach((t) => S.saved.add(t.id));
 }
 
-async function openRecent() {
-  go({ name: 'list', kind: 'recent', title: 'Recently played', sub: 'what you listened to lately', tracks: null, loading: true });
-  try { S.recent = await invoke('recent'); } catch (e) { return fail(e); }
-  if (S.view.kind === 'recent') { S.view.tracks = S.recent; S.view.loading = false; render(); }
+// history of what you played in femboy spotify (kept on this computer)
+function remember(t) {
+  const h = store.get('history', []).filter((x) => x.uri !== t.uri);
+  h.unshift(t);
+  store.set('history', h.slice(0, 100));
+}
+
+function openRecent() {
+  go({ name: 'list', kind: 'recent', title: 'Recently played', sub: 'what you listened to lately', tracks: store.get('history', []) });
 }
 
 async function openPlaylist(p) {
@@ -116,7 +121,6 @@ async function doSearch(q) {
 
 function fail(e) {
   console.error(e);
-  if (String(e).includes(WEB_NOT_SET_UP)) { showWebSetup(); return; }
   toast(`oopsie: ${e}`);
   if (S.view.loading) { S.view.loading = false; S.view.tracks = S.view.tracks || []; render(); }
 }
@@ -366,6 +370,7 @@ async function playIndex(i) {
   renderNow();
   if (S.view.name === 'lyrics' || S.view.name === 'queue') render();
   try { await invoke('play', { uri: t.uri }); } catch (e) { toast(`can't play this: ${e}`); }
+  remember(t);
   loadLyrics(t);
 }
 
@@ -751,51 +756,7 @@ $('btn-login').onclick = async () => {
   }
 };
 
-/* ───────────── own Client ID (Web API) setup ───────────── */
-
-const WEB_NOT_SET_UP = 'web-api-not-set-up';
-
-async function afterLogin() {
-  const st = await invoke('web_status').catch(() => ({ ready: false }));
-  if (st.ready) return loadLibrary();
-  showWebSetup(st);
-}
-
-function showWebSetup(st) {
-  if (st?.client_id && !$('client-id').value) $('client-id').value = st.client_id;
-  $('websetup').classList.remove('hidden');
-}
-
-$('btn-dashboard').onclick = () => (DEMO ? window.open('https://developer.spotify.com/dashboard') : invoke('open_dashboard').catch(toast));
-$('btn-copy-uri').onclick = async () => {
-  try { await navigator.clipboard.writeText($('redirect-uri').textContent); toast('copied ♡'); } catch { toast('select the address and press ctrl+C'); }
-};
-$('client-id').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-setup').click(); });
-$('btn-setup').onclick = async () => {
-  const id = $('client-id').value.trim();
-  const btn = $('btn-setup');
-  const box = $('setup-error');
-  box.classList.add('hidden');
-  if (!/^[0-9a-fA-F]{32}$/.test(id)) {
-    box.textContent = "that doesn't look like a Client ID: it is 32 letters and digits (0-9, a-f).";
-    box.classList.remove('hidden');
-    return;
-  }
-  btn.disabled = true;
-  btn.textContent = 'check your browser...';
-  try {
-    await invoke('setup_web', { clientId: id });
-    $('websetup').classList.add('hidden');
-    toast('connected ♡ loading your library...');
-    await loadLibrary();
-  } catch (e) {
-    box.textContent = String(e);
-    box.classList.remove('hidden');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'connect';
-  }
-};
+const afterLogin = () => loadLibrary();
 
 async function loadLibrary() {
   invoke('me').then((me) => {
@@ -814,12 +775,24 @@ async function loadLibrary() {
 listen('player', (ev) => {
   switch (ev.kind) {
     case 'loading': S.buffering = true; break;
-    case 'playing': S.playing = true; S.buffering = false; setPos(ev.ms); break;
+    case 'playing': S.playing = true; S.buffering = false; S.failStreak = 0; setPos(ev.ms); break;
     case 'paused': S.playing = false; S.buffering = false; setPos(ev.ms); break;
     case 'position': setPos(ev.ms); break;
     case 'stopped': S.playing = false; S.buffering = false; break;
     case 'endoftrack': next(true); return;
-    case 'unavailable': toast('this song is unavailable, skipping~'); next(true); return;
+    case 'unavailable':
+      S.failStreak = (S.failStreak || 0) + 1;
+      if (S.failStreak >= 3) {
+        // several in a row = Spotify refuses audio keys, don't race through the whole queue
+        S.playing = false;
+        S.buffering = false;
+        renderPlayState();
+        toast("Spotify refused to send the audio for these songs (audio key error). Playback stopped (｡•́︿•̀｡)");
+        return;
+      }
+      toast('this song is unavailable, skipping~');
+      next(true);
+      return;
   }
   renderPlayState();
 });
@@ -863,8 +836,6 @@ async function demoInvoke(cmd, args = {}) {
   await new Promise((r) => setTimeout(r, 120));
   switch (cmd) {
     case 'init': return true;
-    case 'web_status': return { ready: !location.search.includes('setup'), client_id: null };
-    case 'setup_web': return null;
     case 'me': return { name: 'cutie', avatar: demoCover(4, '') };
     case 'playlists': return DEMO_PLAYLISTS;
     case 'liked': case 'recent': case 'playlist_tracks': return DEMO_TRACKS;

@@ -64,7 +64,7 @@ img { display: block; }
     "top top top"
     "side main right"
     "player player player";
-  gap: 8px 10px;
+  gap: 16px 10px;
   padding: 0 12px;
 }
 
@@ -709,41 +709,79 @@ img { display: block; }
 .pink-btn:hover { transform: scale(1.04); }
 .pink-btn:disabled { opacity: .6; cursor: wait; transform: none; }
 
-.setup-card { width: 600px; max-height: 92vh; overflow-y: auto; }
-.setup-card h2 { margin: 0 0 8px; font-size: 30px; }
-.setup-intro { color: var(--plum-2); margin: 0 0 12px; line-height: 1.4; }
-.setup-steps { margin: 0 0 16px; padding-left: 22px; line-height: 1.55; }
-.setup-steps li { margin-bottom: 8px; }
-.setup-steps .chip { height: 30px; font-size: 14px; padding: 0 12px; }
-.chip.small { height: 26px; font-size: 13px; padding: 0 10px; }
-.copy-row { display: inline-flex; align-items: center; gap: 8px; margin: 2px 0; }
-.copy-row code {
-  background: #fff;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  padding: 2px 8px;
-  font-size: 14px;
-  user-select: all;
-  -webkit-user-select: all;
-}
-.setup-input { display: flex; gap: 10px; }
-.setup-input input {
-  flex: 1;
-  height: 50px;
-  border-radius: 14px;
-  border: 2px solid var(--line-strong);
-  background: #fff;
-  padding: 0 14px;
-  font: 500 17px var(--font);
-  color: var(--plum);
-  outline: none;
-  user-select: text;
-  -webkit-user-select: text;
-}
-.setup-input input:focus { border-color: var(--pink-2); }
-.setup-card .hint { font-size: 14px; color: var(--plum-soft); margin: 10px 0 0; }
-
 .custom-card { width: 440px; }
+
+/* ───────── cat ears ───────── */
+
+:root {
+  --ear: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 46 36'%3E%3Cpath d='M2 36 11 7Q14-1 20 5L44 36Z' fill='%23f9eff8'/%3E%3Cpath d='M2 35 11 7Q14-1 20 5L44 35' fill='none' stroke='%23c58ebd' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M11.5 34 15.5 15Q17 11 20 14L33 34Z' fill='%23ffc2da'/%3E%3C/svg%3E");
+}
+
+.ears {
+  position: relative;
+  grid-row: 2;
+  align-self: start;
+  height: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.ears-side { grid-column: 1; }
+.ears-main { grid-column: 2; }
+.ears-right { grid-column: 3; }
+#app.no-right .ears-right { display: none; }
+
+.ear {
+  --w: 44px;
+  --tilt: -12deg;
+  position: absolute;
+  top: calc(var(--w) * -0.78 + 3px);
+  width: var(--w);
+  height: calc(var(--w) * 0.78);
+  background: var(--ear) center / contain no-repeat;
+  transform-origin: 50% 100%;
+  animation: ear-twitch 7s ease-in-out infinite;
+}
+.ear.l { left: 9%; transform: rotate(var(--tilt)); }
+.ear.r { right: 9%; transform: scaleX(-1) rotate(var(--tilt)); animation-name: ear-twitch-r; animation-delay: .35s; }
+.ears-side .ear { --w: 26px; }
+.ears-side .ear.l { left: 6px; }
+.ears-side .ear.r { right: 6px; }
+.ears-main .ear { --w: 50px; }
+.ears-main .ear.l { left: 7%; }
+.ears-main .ear.r { right: 7%; }
+.ears-right .ear { animation-delay: 2.1s; }
+.ears-right .ear.r { animation-delay: 2.45s; }
+.ears-side .ear { animation-delay: 4.3s; }
+.ears-side .ear.r { animation-delay: 4.6s; }
+
+@keyframes ear-twitch {
+  0%, 90%, 100% { transform: rotate(var(--tilt)); }
+  93% { transform: rotate(calc(var(--tilt) - 14deg)); }
+  96% { transform: rotate(calc(var(--tilt) + 4deg)); }
+}
+@keyframes ear-twitch-r {
+  0%, 90%, 100% { transform: scaleX(-1) rotate(var(--tilt)); }
+  93% { transform: scaleX(-1) rotate(calc(var(--tilt) - 14deg)); }
+  96% { transform: scaleX(-1) rotate(calc(var(--tilt) + 4deg)); }
+}
+
+/* the pop-up cards get ears too */
+.card { position: relative; }
+.card::before, .card::after {
+  content: "";
+  position: absolute;
+  top: -38px;
+  width: 52px;
+  height: 41px;
+  background: var(--ear) center / contain no-repeat;
+  pointer-events: none;
+}
+.card::before { left: 44px; transform: rotate(-12deg); }
+.card::after { right: 44px; transform: scaleX(-1) rotate(-12deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ear { animation: none; }
+}
 .custom-card h2 { margin: 0 0 18px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-weight: 500; margin-bottom: 16px; }
 .field input[type="text"] {
