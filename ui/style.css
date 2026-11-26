@@ -703,6 +703,33 @@ img { display: block; }
   animation: note-float 1.6s ease-out infinite;
 }
 
+/* DJ X on air */
+.buddy .onair {
+  position: absolute;
+  left: 50%;
+  top: -14px;
+  transform: translateX(-50%) scale(.6);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #8b5cf6, #ff7fb2);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(139, 92, 246, .6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s, transform .2s;
+}
+.buddy.dj .onair { opacity: 1; transform: translateX(-50%) scale(1); animation: onair-glow 1.2s ease-in-out infinite alternate; }
+.buddy.dj.vibing img { animation-duration: .38s; }
+@keyframes onair-glow {
+  from { box-shadow: 0 0 0 2px #fff, 0 0 6px rgba(139, 92, 246, .4); }
+  to { box-shadow: 0 0 0 2px #fff, 0 0 16px rgba(255, 127, 178, .9); }
+}
+.tile .dj-art { background: linear-gradient(135deg, #d9c5ff, #ffc6dd); object-fit: contain; padding: 2px; }
+.card-item .cov.dj-art { object-fit: contain; background: linear-gradient(135deg, #d9c5ff, #ffc6dd); padding: 8px; }
+
 @keyframes buddy-idle {
   0%, 100% { transform: rotate(-3deg) translateY(0); }
   50% { transform: rotate(3deg) translateY(-1.5px); }

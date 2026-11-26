@@ -177,6 +177,18 @@ async fn play(
         .map_err(err)
 }
 
+/// Starts Spotify DJ ("DJ X") on the active (or given) device.
+#[tauri::command]
+async fn play_dj(state: State<'_, AppState>, device: Option<String>) -> CmdResult<()> {
+    state
+        .core()
+        .await?
+        .remote
+        .play_context(femboy_spotify::remote::DJ_URI, device.as_deref())
+        .await
+        .map_err(err)
+}
+
 /// pause, resume, skip_next, skip_prev
 #[tauri::command]
 async fn control(state: State<'_, AppState>, action: String) -> CmdResult<()> {
@@ -235,6 +247,7 @@ fn main() {
             lyrics,
             remote_state,
             play,
+            play_dj,
             control,
             seek,
             set_option,

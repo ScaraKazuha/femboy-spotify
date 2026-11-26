@@ -30,6 +30,9 @@ use crate::auth::log;
 /// Error text the UI recognises to show "open Spotify somewhere".
 pub const NO_DEVICE: &str = "no-spotify-device";
 
+/// Spotify's AI DJ ("X") is a special playlist with this id.
+pub const DJ_URI: &str = "spotify:playlist:37i9dQZF1EYkqdzj48dyYq";
+
 #[derive(Clone, Debug, Serialize)]
 pub struct RemoteDevice {
     pub id: String,
@@ -342,6 +345,17 @@ impl Remote {
                 "skip_to": { "track_uri": track, "track_index": index },
                 "player_options_override": {},
             },
+        });
+        self.command(device, cmd).await
+    }
+
+    /// Starts a whole context from its beginning (used for Spotify DJ).
+    pub async fn play_context(&self, uri: &str, device: Option<&str>) -> Result<()> {
+        let cmd = json!({
+            "endpoint": "play",
+            "context": { "uri": uri, "url": format!("context://{uri}"), "metadata": {} },
+            "play_origin": { "feature_identifier": "femboy_spotify", "feature_version": env!("CARGO_PKG_VERSION") },
+            "options": { "license": "premium", "player_options_override": {} },
         });
         self.command(device, cmd).await
     }

@@ -211,8 +211,11 @@ window.addEventListener('resize', fitHeroTitle);
 function homeHtml() {
   const chips = [['all', 'All'], ['playlists', 'Playlists'], ['liked', 'Liked'], ['recent', 'Recent']]
     .map(([k, l]) => `<button class="chip ${S.filter === k ? 'active' : ''}" data-filter="${k}">${l}</button>`).join('');
-  const tiles = [`<button class="tile" data-open="liked"><div class="tile-art liked-art">${icon('heart')}</div><span>Liked Songs</span></button>`]
-    .concat(S.playlists.slice(0, 7).map((p) => `<button class="tile" data-playlist="${esc(p.id)}"><img src="${img(p.image)}" alt=""><span>${esc(p.name)}</span></button>`))
+  const tiles = [
+    `<button class="tile" data-open="liked"><div class="tile-art liked-art">${icon('heart')}</div><span>Liked Songs</span></button>`,
+    `<button class="tile" data-open="dj" title="Spotify DJ"><img class="dj-art" src="art/headphones.png" alt=""><span>DJ X</span></button>`,
+  ]
+    .concat(S.playlists.slice(0, 6).map((p) => `<button class="tile" data-playlist="${esc(p.id)}"><img src="${img(p.image)}" alt=""><span>${esc(p.name)}</span></button>`))
     .join('');
   const cards = (S.filter === 'playlists' ? S.playlists : S.playlists.slice(7, 19).concat(S.playlists.length <= 7 ? S.playlists : []))
     .map(cardHtml).join('');
@@ -242,6 +245,7 @@ function libraryHtml() {
     </div></div>
     <div class="cards">
       <button class="card-item" data-open="liked"><div class="cov liked-art">${icon('heart')}</div><div class="t">Liked Songs</div><div class="st">♡</div></button>
+      <button class="card-item" data-open="dj"><img class="cov dj-art" src="art/headphones.png" alt=""><div class="t">DJ X</div><div class="st">Spotify DJ ♪</div></button>
       ${S.playlists.map(cardHtml).join('')}
     </div>`;
 }
@@ -332,6 +336,7 @@ function renderNow() {
 function renderPlayState() {
   setIcon($('btn-play'), S.playing ? 'pause' : 'play');
   $('btn-panel').classList.toggle('vibing', S.playing && !S.buffering);
+  $('btn-panel').classList.toggle('dj', !!S.djOn);
   $('btn-shuffle').classList.toggle('active', S.shuffle);
   setIcon($('btn-repeat'), S.repeat === 'one' ? 'repeat-one' : 'repeat');
   $('btn-repeat').classList.toggle('active', S.repeat !== 'off');
@@ -487,14 +492,57 @@ function setNow(t) {
   if (changed) {
     S.lyrics = null;
     S.lyricsFor = null;
-    remember(t);
-    loadLyrics(t);
+    if (t.uri.startsWith('spotify:track:')) remember(t);
+    if (t.id) loadLyrics(t);
+    else { S.lyricsFor = t.id; renderLyricsCard(); }
   }
   renderNow();
   if (changed && (S.view.name === 'lyrics' || S.view.name === 'queue')) render();
 }
 
+/* ───────────── DJ X (Spotify DJ) ───────────── */
+
+const DJ_URI = 'spotify:playlist:37i9dQZF1EYkqdzj48dyYq';
+const DJ_ART = 'art/headphones.png';
+
+async function playDJ() {
+  S.queue = [];
+  S.index = -1;
+  S.ctx = null;
+  S.context = 'DJ X';
+  S.djOn = true;
+  S.playing = true;
+  S.buffering = true;
+  setPos(0);
+  setNow({ uri: 'dj:start', id: '', name: 'DJ X is warming up ♪', artists: 'Spotify DJ', album: '', duration_ms: 0, image: DJ_ART, image_large: DJ_ART });
+  toast('DJ X is on the way ♪');
+  try {
+    await invoke('play_dj', { device: pickDevice() });
+  } catch (e) {
+    S.playing = false;
+    S.djOn = false;
+    renderPlayState();
+    handleRemoteError(e);
+  }
+}
+
+// DJ X talking: "spotify:media:000…" = DJ speaking, "spotify:media:<track id>" = DJ introducing that track
+async function onDjMedia(uri) {
+  const id = uri.split(':').pop();
+  const talking = { uri, id: '', name: 'DJ X is talking ♪', artists: 'Spotify DJ', album: '', duration_ms: S.durationMs, image: DJ_ART, image_large: DJ_ART };
+  if (/^0+$/.test(id)) return setNow(talking);
+  setNow({ ...talking, name: 'DJ X ♪ introducing...' });
+  try {
+    const info = S.cache.get(`spotify:track:${id}`) || await invoke('track_info', { uri: `spotify:track:${id}` });
+    if (info && S.now?.uri === uri) {
+      S.now = { ...info, id: '', uri, name: `DJ X ♪ ${info.name}`, artists: `introducing · ${info.artists}` };
+      renderNow();
+    }
+  } catch { /* keep the talking card */ }
+}
+
 async function onRemoteTrack(uri) {
+  if (uri.startsWith('spotify:media:')) return onDjMedia(uri);
   const known = S.cache.get(uri) || S.queue.find((x) => x.uri === uri);
   if (known) return setNow(known);
   setNow({ uri, id: uri.split(':').pop(), name: '...', artists: '', album: '', duration_ms: S.durationMs });
@@ -509,6 +557,7 @@ async function onRemoteTrack(uri) {
 
 function applyRemote(st) {
   S.devices = st.devices || [];
+  S.djOn = !!st.active_device && st.context_uri === DJ_URI;
   S.activeDevice = st.active_device;
   S.activeDeviceName = st.active_device_name;
   S.playing = st.playing;
@@ -533,7 +582,8 @@ const KIND_ICON = { computer: 'devices', phone: 'devices', tablet: 'devices', sp
 
 function renderDeviceInfo() {
   const name = S.activeDeviceName;
-  $('right-title').textContent = name ? `Now playing • on ${name}` : (S.context ? `Now playing • ${S.context}` : 'Now playing');
+  const what = S.djOn ? 'DJ X' : 'Now playing';
+  $('right-title').textContent = name ? `${what} • on ${name}` : (S.context ? `${what} • ${S.context}` : what);
   $('btn-devices').classList.toggle('active', !!name);
   $('btn-devices').title = name ? `playing on ${name}` : 'devices';
 }
@@ -583,7 +633,7 @@ $('nodevice-ok').onclick = () => $('nodevice').classList.add('hidden');
 
 async function saveCurrent() {
   const t = current();
-  if (!t) return;
+  if (!t || !t.uri.startsWith('spotify:track:')) return;
   if (S.saved.has(t.id)) return toast('already in your liked songs ♡');
   try {
     await invoke('save_track', { id: t.id });
@@ -695,6 +745,7 @@ main.addEventListener('click', (e) => {
     return render();
   }
   if (el.dataset.open === 'liked') return openLiked();
+  if (el.dataset.open === 'dj') return playDJ();
   if (el.dataset.playlist) return openPlaylistById(el.dataset.playlist);
   if (el.dataset.line !== undefined && S.lyrics) {
     const ms = S.lyrics[+el.dataset.line]?.start_ms;
@@ -981,11 +1032,25 @@ async function demoInvoke(cmd, args = {}) {
     case 'lyrics': return [{ start_ms: 0, words: 'this is a demo, no real lyrics here' }, { start_ms: 4000, words: 'log in with Spotify to hear the music' }, { start_ms: 8000, words: 'pink pink pink ♡' }, { start_ms: 12000, words: 'la la la~' }];
     // a pretend Spotify Connect device
     case 'remote_state': return demoState();
-    case 'track_info': return DEMO_TRACKS.find((t) => t.uri === args.uri) || null;
+    case 'play_dj': {
+      demoRemote.active = args.device || demoRemote.active || demoDevices()[0].id;
+      demoRemote.context = DJ_URI;
+      demoRemote.uris = DEMO_TRACKS.map((t) => t.uri);
+      demoRemote.uri = 'spotify:media:0000000000000000000000';
+      demoRemote.playing = true;
+      demoRemote.pos = 0;
+      demoRemote.at = performance.now();
+      demoEmit(demoState());
+      setTimeout(() => { demoRemote.uri = 'spotify:media:t3'; demoEmit(demoState()); }, 2500);
+      setTimeout(() => { demoRemote.uri = 'spotify:track:t3'; demoEmit(demoState()); }, 5000);
+      return null;
+    }
+    case 'track_info': return DEMO_TRACKS.find((t) => t.uri === args.uri || t.uri === args.uri.replace('spotify:track:', 'spotify:track:t').replace('tt', 't')) || null;
     case 'play': {
       const d = demoDevices();
       demoRemote.active = args.device || demoRemote.active || d[0].id;
       demoRemote.uris = args.uris;
+      demoRemote.context = '';
       demoRemote.uri = args.uris[args.index];
       demoRemote.playing = true;
       demoRemote.pos = 0;
@@ -1028,7 +1093,7 @@ function demoState() {
   const t = DEMO_TRACKS.find((x) => x.uri === r.uri);
   return {
     devices: demoDevices(), active_device: r.active, active_device_name: dev?.name || null,
-    track_uri: r.active ? r.uri : null, context_uri: '', playing: r.playing && !!r.active, buffering: false,
+    track_uri: r.active ? r.uri : null, context_uri: r.context || '', playing: r.playing && !!r.active, buffering: false,
     position_ms: Math.round(demoPos()), duration_ms: t?.duration_ms || 0,
     shuffle: r.shuffle, repeat_context: r.repeat_context, repeat_track: r.repeat_track,
     volume: r.active ? r.volume : null, next_uris: [],
