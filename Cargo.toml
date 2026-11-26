@@ -24,8 +24,10 @@ dirs = "7.0.0"
 fastrand = "2.5.0"
 futures-util = "0.3.34"
 librespot = { version = "0.8.0", default-features = false, features = ["rodio-backend", "rustls-tls-native-roots"] }
+log = "0.4.35"
 ratatui = "0.30.2"
 reqwest = { version = "0.13.5", features = ["json"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tauri = { version = "2.12.7", features = ["custom-protocol"] }

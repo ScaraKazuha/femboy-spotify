@@ -33,29 +33,13 @@ fn err(e: impl std::fmt::Display) -> String {
     msg
 }
 
-fn log_path() -> std::path::PathBuf {
-    auth::data_dir().join("femboy-spotify.log")
-}
-
 fn log_line(line: &str) {
-    use std::io::Write;
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let _ = std::fs::create_dir_all(auth::data_dir());
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_path())
-    {
-        let _ = writeln!(f, "[{secs}] {line}");
-    }
+    auth::log(line);
 }
 
 #[tauri::command]
 fn log_file() -> String {
-    log_path().display().to_string()
+    auth::log_path().display().to_string()
 }
 
 impl AppState {
@@ -191,6 +175,9 @@ async fn set_volume(state: State<'_, AppState>, volume: u16) -> CmdResult<()> {
 }
 
 fn main() {
+    auth::init_runtime();
+    auth::init_file_log();
+    log_line(concat!("femboy spotify ", env!("CARGO_PKG_VERSION"), " started"));
     tauri::Builder::default()
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
