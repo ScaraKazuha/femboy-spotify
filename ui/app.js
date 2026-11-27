@@ -382,10 +382,14 @@ function contextOf(v) {
 
 function cacheTracks(list) { (list || []).forEach((t) => S.cache.set(t.uri, t)); }
 
-// a device to start on when nothing is active yet (prefer a computer)
+// the app's own built-in player (Spotify's web player in a hidden window)
+const isBuiltin = (d) => /^web player/i.test(d.name || '');
+const deviceName = (d) => (isBuiltin(d) ? 'femboy spotify (this app) ♡' : d.name);
+
+// a device to start on when nothing is active yet: our own player first
 function pickDevice() {
   if (S.activeDevice) return null;
-  const d = S.devices.find((x) => x.kind === 'computer') || S.devices[0];
+  const d = S.devices.find(isBuiltin) || S.devices.find((x) => x.kind === 'computer') || S.devices[0];
   return d ? d.id : null;
 }
 
@@ -559,7 +563,8 @@ function applyRemote(st) {
   S.devices = st.devices || [];
   S.djOn = !!st.active_device && st.context_uri === DJ_URI;
   S.activeDevice = st.active_device;
-  S.activeDeviceName = st.active_device_name;
+  const active = S.devices.find((d) => d.id === st.active_device);
+  S.activeDeviceName = active ? deviceName(active) : st.active_device_name;
   S.playing = st.playing;
   S.buffering = st.playing && st.buffering;
   S.durationMs = st.duration_ms || S.durationMs;
@@ -591,13 +596,15 @@ function renderDeviceInfo() {
 function renderDevices() {
   const list = $('devices-list');
   if (!S.devices.length) {
-    list.innerHTML = `<p class="dev-empty">no Spotify devices online (｡•́︿•̀｡)<br>open the Spotify app on your computer or phone</p>`;
+    list.innerHTML = `<p class="dev-empty">the built-in player is waking up (｡•́︿•̀｡)<br>${S.playerReady ? 'give it a few seconds' : '<button class="chip" data-player-login>sign in to it</button>'}</p>`;
     return;
   }
-  list.innerHTML = S.devices.map((d) => `
+  // our own player on top
+  const devices = [...S.devices.filter(isBuiltin), ...S.devices.filter((d) => !isBuiltin(d))];
+  list.innerHTML = devices.map((d) => `
     <button class="dev ${d.active ? 'active' : ''}" data-device="${esc(d.id)}">
-      ${icon(KIND_ICON[d.kind] || 'devices')}
-      <span class="dev-name">${esc(d.name)}</span>
+      ${icon(isBuiltin(d) ? 'heart' : KIND_ICON[d.kind] || 'devices')}
+      <span class="dev-name">${esc(deviceName(d))}</span>
       <span class="dev-meta">${d.active ? (S.playing ? 'playing ♪' : 'connected') : esc(d.kind)}</span>
     </button>`).join('');
 }
@@ -611,6 +618,7 @@ function toggleDevices(force) {
 
 $('devices-list').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-device]');
+  if (e.target.closest('[data-player-login]')) { toggleDevices(false); return playerLogin(); }
   if (!b) return;
   const id = b.dataset.device;
   if (id === S.activeDevice) return toggleDevices(false);
@@ -628,8 +636,42 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('#devices-pop') && !e.target.closest('#btn-devices')) toggleDevices(false);
 });
 
-function showNoDevice() { $('nodevice').classList.remove('hidden'); }
-$('nodevice-ok').onclick = () => $('nodevice').classList.add('hidden');
+/* ───────────── built-in player ─────────────
+   Spotify's web player runs hidden inside the app and plays the music itself.
+   It needs its own Spotify sign-in once (a small window opens for it). */
+
+function showNoDevice() {
+  if (!S.playerReady) return showPlayerSetup();
+  // signed in, but the player hasn't shown up in Spotify Connect yet
+  toast('the built-in player is waking up, try again in a few seconds ♡');
+}
+
+function showPlayerSetup() { $('nodevice').classList.remove('hidden'); }
+const hidePlayerSetup = () => $('nodevice').classList.add('hidden');
+
+async function playerLogin() {
+  hidePlayerSetup();
+  try {
+    await invoke('player_login');
+    toast('sign in to Spotify in the little window ♡');
+  } catch (e) { toast(`oopsie: ${e}`); }
+}
+
+$('nodevice-ok').onclick = playerLogin;
+$('nodevice-later').onclick = hidePlayerSetup;
+
+listen('player', () => {
+  S.playerReady = true;
+  hidePlayerSetup();
+  toast('the built-in player is ready, music plays right here now ♡');
+});
+
+async function checkPlayer() {
+  try {
+    S.playerReady = await invoke('player_status');
+    if (!S.playerReady) showPlayerSetup();
+  } catch (e) { toast(`built-in player: ${e}`); }
+}
 
 async function saveCurrent() {
   const t = current();
@@ -1010,7 +1052,7 @@ $('btn-login').onclick = async () => {
   }
 };
 
-const afterLogin = () => loadLibrary();
+const afterLogin = () => { checkPlayer(); return loadLibrary(); };
 
 async function loadLibrary() {
   invoke('me').then((me) => {
@@ -1064,12 +1106,14 @@ const DEMO_PLAYLISTS = ['Boykisser Mix', 'DJ', 'Meme Mix', 'onokami Mix', 'Spit 
 const DEMO_TRACKS = [['MURDER EVERY 1 U KNOW!', 'femtanyl, takihasdied', 101000], ['strawberry milk', 'pastel kid', 184000], ['heart.exe', 'glitchbunny', 152000], ['pink sky', 'lavender', 201000], ['catboy summer', 'meowmix', 176000], ['sugar rush', 'candycore', 143000], ['blåhaj', 'shark gang', 165000], ['skirt season', 'thigh highs', 199000]]
   .map(([name, artists, d], i) => ({ id: 't' + i, uri: 'spotify:track:t' + i, name, artists, album: 'cute album vol. ' + (i % 3 + 1), duration_ms: d, image: demoCover(i + 2, ''), image_large: demoCover(i + 2, '') }));
 // `var`-free on purpose: listen() runs before this part of the file is evaluated
-function demoListen(_ev, cb) { (demoListen.cbs ||= []).push(cb); }
-function demoEmit(ev) { setTimeout(() => (demoListen.cbs || []).forEach((cb) => cb(ev)), 250); }
+function demoListen(ev, cb) { (demoListen.cbs ||= []).push([ev, cb]); }
+function demoEmit(payload, ev = 'remote') { setTimeout(() => (demoListen.cbs || []).forEach(([e, cb]) => e === ev && cb(payload)), 250); }
 async function demoInvoke(cmd, args = {}) {
   await new Promise((r) => setTimeout(r, 120));
   switch (cmd) {
     case 'init': return true;
+    case 'player_status': return !location.search.includes('noplayer');
+    case 'player_login': setTimeout(() => demoEmit(true, 'player'), 1500); return null;
     case 'me': return { name: 'cutie', avatar: demoCover(4, '') };
     case 'playlists': return DEMO_PLAYLISTS;
     case 'liked': case 'recent': case 'playlist_tracks': return DEMO_TRACKS;

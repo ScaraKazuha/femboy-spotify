@@ -153,20 +153,32 @@ img { display: block; }
 .search input::placeholder { color: var(--plum-2); opacity: .85; }
 .search-sep { width: 2px; height: 28px; background: var(--line-strong); border-radius: 2px; }
 
+/* round profile picture like Spotify's, with a pink ring */
 .avatar {
-  width: 54px;
-  height: 54px;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 0;
   border-radius: 50%;
   padding: 3px;
+  overflow: hidden;
   background: linear-gradient(135deg, var(--pink), #c9a6f2);
   box-shadow: 0 0 0 2px var(--line-strong);
   margin: 0 6px;
+  transition: transform .15s;
 }
+.avatar:hover { transform: scale(1.06); }
 .avatar img {
+  display: block;
   width: 100%;
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
+  /* trim the edges so framed pictures still fill the circle */
+  object-view-box: inset(9%);
   background: var(--pink-soft);
 }
 
@@ -664,18 +676,21 @@ img { display: block; }
   place-items: center;
   border-radius: 50%;
 }
+/* Spotify-style "on" dot under the buddy while the now-playing panel is open */
 .buddy::before {
   content: "";
   position: absolute;
-  inset: 5px;
+  left: 50%;
+  bottom: -5px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 40%, #ffe4f0, var(--pink-soft));
-  border: 2.5px solid var(--plum);
+  background: var(--pink-2);
   opacity: 0;
-  transform: scale(.85);
+  transform: translateX(-50%) scale(.4);
   transition: opacity .2s, transform .2s;
 }
-.buddy.active::before { opacity: 1; transform: scale(1); }
+.buddy.active::before { opacity: 1; transform: translateX(-50%) scale(1); }
 .buddy img {
   position: relative;
   width: 62px;
