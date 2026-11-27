@@ -1038,7 +1038,9 @@ fn refresh_saved_marks() {
         }
         toggle(&b, "on", on);
         let _ = b.set_attribute("data-tip", if on { "remove from Liked Songs" } else { "save to Liked Songs" });
-        if let Some(im) = query(&b, "img") {
+        if crate::icons::plain() {
+            b.set_inner_html(&views::like_mark(on));
+        } else if let Some(im) = query(&b, "img") {
             let _ = im.set_attribute("src", &format!("art/icons/{}.png", if on { "liked" } else { "add" }));
             remove_class(&im, "pop");
             let _ = im.unchecked_ref::<web_sys::HtmlElement>().offset_width();

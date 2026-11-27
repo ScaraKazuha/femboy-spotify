@@ -1421,3 +1421,113 @@ html.theme-switching, html.theme-switching *, html.theme-switching *::before, ht
 .menu-item.on { color: var(--pink-2); font-weight: 700; }
 .menu-item.on::after { content: "✓"; margin-left: auto; padding-left: 10px; }
 #btn-theme > .ico.art { width: 32px; height: 32px; }
+
+/* ───────── "Spotify" theme (for normies) ─────────
+   Spotify's own dark look: black background, #121212 panels, green accent, plain
+   line icons (src/icons.rs), no ears or stickers. On top of the dark theme
+   (data-theme="dark" + data-look="spotify"); the custom banner and the rest stay. */
+:root[data-look="spotify"] {
+  --bg: #000;
+  --panel: #121212;
+  --panel-solid: #121212;
+  --line: #2a2a2a;
+  --line-strong: #3e3e3e;
+  --plum: #fff;
+  --plum-2: #b3b3b3;
+  --plum-soft: #a7a7a7;
+  --pink: #1ed760;
+  --pink-2: #1ed760;
+  --pink-soft: #1f1f1f;
+  --cream: #1f1f1f;
+  --peach: #fff;
+  --blue: #2a2a2a;
+  --blue-2: #1f1f1f;
+  --track: #4d4d4d;
+  --radius: 8px;
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+[data-look="spotify"] body { background: #000; }
+[data-look="spotify"] .ears,
+[data-look="spotify"] .card::before,
+[data-look="spotify"] .card::after,
+[data-look="spotify"] .hero-deco,
+[data-look="spotify"] .sticker { display: none; }
+[data-look="spotify"] .panel { border: 0; box-shadow: none; backdrop-filter: none; }
+[data-look="spotify"] .menu, [data-look="spotify"] .tip { background: #282828; border: 0; color: #fff; box-shadow: 0 16px 24px rgba(0, 0, 0, .5); }
+[data-look="spotify"] .tip { font-size: 13px; padding: 6px 10px; }
+[data-look="spotify"] .menu-item:hover { background: #3e3e3e; }
+[data-look="spotify"] .overlay { background: rgba(0, 0, 0, .7); }
+[data-look="spotify"] .card { background: #282828; border: 0; }
+
+/* buttons */
+[data-look="spotify"] .icon-btn,
+[data-look="spotify"] .side-btn { color: #b3b3b3; border-radius: 50%; }
+[data-look="spotify"] .icon-btn:hover,
+[data-look="spotify"] .side-btn:hover { background: transparent; color: #fff; }
+[data-look="spotify"] .icon-btn.active,
+[data-look="spotify"] .side-btn.active { color: #1ed760; }
+[data-look="spotify"] .side-btn.active { background: #1f1f1f; }
+[data-look="spotify"] .home-btn { background: #1f1f1f; border: 0; box-shadow: none; color: #b3b3b3; width: 48px; height: 48px; }
+[data-look="spotify"] .home-btn:hover, [data-look="spotify"] .home-btn.on { background: #2a2a2a; color: #fff; }
+[data-look="spotify"] .search { background: #1f1f1f; border: 0; box-shadow: none; border-radius: 500px; }
+[data-look="spotify"] .search:hover { background: #2a2a2a; box-shadow: inset 0 0 0 1px #3e3e3e; }
+[data-look="spotify"] .search:focus-within { box-shadow: inset 0 0 0 2px #fff; }
+[data-look="spotify"] .avatar { border: 0; box-shadow: 0 0 0 6px #1f1f1f; }
+[data-look="spotify"] .chip { border: 0; background: #2a2a2a; color: #fff; font-size: 14px; height: 32px; }
+[data-look="spotify"] .chip:hover { background: #333; }
+[data-look="spotify"] .chip.active { background: #fff; color: #000; }
+[data-look="spotify"] .round-play,
+[data-look="spotify"] .pink-btn { background: #1ed760; border: 0; color: #000; box-shadow: none; }
+[data-look="spotify"] .round-play:hover,
+[data-look="spotify"] .pink-btn:hover { background: #3be477; transform: scale(1.04); }
+[data-look="spotify"] .play-btn { width: 40px; height: 40px; background: #fff; border: 0; color: #000; }
+[data-look="spotify"] .play-btn .ico { width: 20px; height: 20px; }
+[data-look="spotify"] .buttons { gap: 14px; }
+[data-look="spotify"] .buttons .icon-btn .ico { width: 20px; height: 20px; }
+[data-look="spotify"] .extras .icon-btn .ico { width: 20px; height: 20px; }
+
+/* bars: white, green while you point at them */
+[data-look="spotify"] .bar { height: 4px; background: #4d4d4d; }
+[data-look="spotify"] .bar-fill { background: #fff; border-radius: 4px; }
+[data-look="spotify"] .bar:hover .bar-fill, [data-look="spotify"] .bar.drag .bar-fill { background: #1ed760; }
+[data-look="spotify"] .bar-knob { background: #fff; border: 0; box-shadow: 0 2px 4px rgba(0, 0, 0, .5); opacity: 0; }
+[data-look="spotify"] .bar:hover .bar-knob, [data-look="spotify"] .bar.drag .bar-knob { opacity: 1; }
+[data-look="spotify"] .progress { font-size: 12px; color: #b3b3b3; }
+
+/* home, lists */
+[data-look="spotify"] .tile { background: rgba(255, 255, 255, .07); border: 0; box-shadow: none; border-radius: 4px; }
+[data-look="spotify"] .tile:hover { background: rgba(255, 255, 255, .2); }
+[data-look="spotify"] .card-item:hover { background: #1f1f1f; transform: none; }
+[data-look="spotify"] .section-head .line { display: none; }
+[data-look="spotify"] .section-head h2 { font-weight: 700; font-size: 24px; }
+[data-look="spotify"] .list-head { background: linear-gradient(180deg, #535353 0%, #121212 100%); border-radius: 8px 8px 0 0; }
+[data-look="spotify"] .list-cover { border: 0; transform: none; border-radius: 4px; box-shadow: 0 4px 60px rgba(0, 0, 0, .5); }
+[data-look="spotify"] .list-title { font-weight: 800; letter-spacing: -1px; }
+[data-look="spotify"] .trow:not(.head):hover { background: rgba(255, 255, 255, .1); }
+[data-look="spotify"] .trow.selected { background: rgba(255, 255, 255, .3); }
+[data-look="spotify"] .trow.playing .tname, [data-look="spotify"] .trow.playing .tnum { color: #1ed760; }
+[data-look="spotify"] .tlike.on { color: #1ed760; }
+[data-look="spotify"] .hero-title { -webkit-text-stroke: 0; text-shadow: 0 2px 12px rgba(0, 0, 0, .5); }
+
+/* now playing */
+[data-look="spotify"] .np-cover { border: 0; border-radius: 4px; width: 56px; height: 56px; }
+[data-look="spotify"] .np-name { text-transform: none; font-size: 14px; font-weight: 600; }
+[data-look="spotify"] .np-artist { font-size: 12px; }
+[data-look="spotify"] .right-cover { border: 0; border-radius: 8px; }
+[data-look="spotify"] .lyrics-card { background: #2a2a2a; border: 0; }
+[data-look="spotify"] .dev.active { background: #2a2a2a; color: #1ed760; }
+[data-look="spotify"] .update-notes,
+[data-look="spotify"] .field input[type="text"],
+[data-look="spotify"] .ask-card input,
+[data-look="spotify"] .list-find.open { background: #2a2a2a; color: #fff; }
+[data-look="spotify"] .add-btn.saved { color: #1ed760; }
+[data-look="spotify"] .add-btn .ico { width: 22px; height: 22px; }
+[data-look="spotify"] .hero-play { background: #1ed760; border: 0; color: #000; width: 64px; height: 64px; box-shadow: 0 8px 16px rgba(0, 0, 0, .3); }
+[data-look="spotify"] .hero-play::before, [data-look="spotify"] .hero-play::after { display: none; }
+[data-look="spotify"] .side-thumbs button { border: 0; border-radius: 4px; }
+[data-look="spotify"] .side-thumbs button:hover { transform: none; opacity: .8; }
+[data-look="spotify"] .trow.menu-open { background: rgba(255, 255, 255, .1); }
+/* Liked Songs: the usual violet-blue cover with a white heart */
+[data-look="spotify"] .liked-cover {
+  content: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23450af5'/%3E%3Cstop offset='1' stop-color='%23c4efd9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23g)'/%3E%3Cpath d='M50 70S29 57 26 45c-2-8 3-15 10-15 6 0 10 4 14 9 4-5 8-9 14-9 7 0 12 7 10 15-3 12-24 25-24 25z' fill='%23fff'/%3E%3C/svg%3E");
+}

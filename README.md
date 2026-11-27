@@ -23,7 +23,8 @@ A cute, pastel-pink Spotify client written in Rust. ✧
 - light on your computer: the cute animations run at 15-30 frames a second instead of the
   screen's refresh rate (idle CPU went from ~60 % of a core to under 10 %), and the hidden
   player runs in its own low-memory WebView without the graphics card (~860 MB with music playing)
-- light and dark theme (or follow Windows): the moon / sun button in the top bar
+- themes: light and dark (or follow Windows), and **Spotify (for normies)**: Spotify's own black and
+  green look with plain icons and no ears, the custom banner still yours. The moon / sun button in the top bar
 - bonus: a terminal version (`femboy-spotify-tui`) for terminal lovers
 
 ## Requirements

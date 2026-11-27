@@ -56,6 +56,18 @@ fn svg(name: &str) -> &'static str {
         "mini" => r##"<rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11.5" width="6.5" height="5" rx="1" fill="currentColor"/>"##,
         "fullscreen" => r##"<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>"##,
         "sparkle" => r##"<path fill="currentColor" stroke="none" d="M12 1.5c.6 5.2 2.3 7.6 9.5 10.5-7.2 2.9-8.9 5.3-9.5 10.5-.6-5.2-2.3-7.6-9.5-10.5C9.7 9.1 11.4 6.7 12 1.5z"/>"##,
+        // plain versions of the ones that only had a drawing (Spotify theme)
+        "menu" => r##"<path d="M4 7h16M4 12h16M4 17h16"/>"##,
+        "clock" => r##"<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>"##,
+        "sort" => r##"<path d="M4 7h16M7 12h10M10 17h4"/>"##,
+        "search-in-list" => r##"<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>"##,
+        "delete" => r##"<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/>"##,
+        "rename" => r##"<path d="M4 20l1-4.5L15.5 5a2.1 2.1 0 0 1 3 3L8 18.5z"/>"##,
+        "clear-queue" => r##"<path d="M4 7h11M4 12h11M4 17h7M15 15l5 5M20 15l-5 5"/>"##,
+        "follow" => r##"<circle cx="9" cy="8" r="3.4"/><path d="M2.8 20c.4-3.6 3-5.6 6.2-5.6s5.8 2 6.2 5.6M19 8v6M16 11h6"/>"##,
+        "following" => r##"<circle cx="9" cy="8" r="3.4"/><path d="M2.8 20c.4-3.6 3-5.6 6.2-5.6s5.8 2 6.2 5.6M16 11l2 2 4-4"/>"##,
+        "save-album" => r##"<circle cx="12" cy="12" r="9"/><path d="M12 7.5v9M7.5 12h9"/>"##,
+        "album-saved" => r##"<circle cx="12" cy="12" r="9" fill="currentColor"/><path d="m7.8 12.3 2.8 2.8 5.6-5.8" stroke="#000"/>"##,
         _ => "",
     }
 }
@@ -144,9 +156,16 @@ pub fn icon(name: &str) -> String {
     icon_cls(name, "")
 }
 
+/// The Spotify theme uses plain line icons instead of the drawings.
+pub fn plain() -> bool {
+    document().document_element().is_some_and(|r| attr(&r, "data-look").as_deref() == Some("spotify"))
+}
+
 pub fn icon_cls(name: &str, cls: &str) -> String {
-    if let Some(file) = icon_art(name) {
-        return art_img(file, cls);
+    if !plain() {
+        if let Some(file) = icon_art(name) {
+            return art_img(file, cls);
+        }
     }
     format!(
         r#"<svg class="ico {cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{}</svg>"#,
@@ -155,7 +174,7 @@ pub fn icon_cls(name: &str, cls: &str) -> String {
 }
 
 fn icon_for(el: &Element, name: &str) -> String {
-    if el.has_attribute("data-art") {
+    if el.has_attribute("data-art") && !plain() {
         if let Some(file) = player_art(name) {
             return art_img(file, "");
         }
@@ -176,6 +195,18 @@ pub fn hydrate(root: &Element) {
 pub fn hydrate_page() {
     if let Some(body) = document().body() {
         hydrate(&body);
+    }
+}
+
+/// Draws every icon on the page again (the theme switched between drawings and plain icons).
+pub fn redraw_all() {
+    let Some(body) = document().body() else { return };
+    for e in query_all(&body, "[data-icon]") {
+        for old in query_all(&e, ":scope > .ico") {
+            old.remove();
+        }
+        let name = attr(&e, "data-icon").unwrap_or_default();
+        let _ = e.insert_adjacent_html("afterbegin", &icon_for(&e, &name));
     }
 }
 

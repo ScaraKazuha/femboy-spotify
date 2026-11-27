@@ -91,7 +91,10 @@ fn menu_html(items: &[Item]) -> String {
         .map(|(i, it)| match it {
             Item::Sep => r#"<div class="menu-sep"></div>"#.to_string(),
             Item::Entry(e) => {
-                let pic = if !e.art.is_empty() {
+                let pic = if !e.art.is_empty() && crate::icons::plain() {
+                    // Spotify theme: its own marks for liked / not liked
+                    icon(if e.art == "unlike" { "check-circle" } else { "plus-circle" })
+                } else if !e.art.is_empty() {
                     format!(r#"<img class="ico art" src="art/icons/{}.png" alt="" draggable="false">"#, e.art)
                 } else if !e.icon.is_empty() {
                     icon(&e.icon)
@@ -436,6 +439,8 @@ pub fn open_theme_menu(btn: Element) {
             with_on(item("sun", "Light", || crate::theme::set("light")), c == "light"),
             with_on(item("moon", "Dark", || crate::theme::set("dark")), c == "dark"),
             with_on(item("devices", "Same as Windows", || crate::theme::set("auto")), c == "auto"),
+            Item::Sep,
+            with_on(item("sparkle", "Spotify (for normies)", || crate::theme::set("spotify")), c == "spotify"),
         ],
         At::Under(btn),
         None,

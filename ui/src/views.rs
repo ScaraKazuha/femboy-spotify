@@ -46,11 +46,20 @@ pub fn artist_links(t: &Track) -> String {
 pub fn like_button(s: &State, t: &Track, i: usize) -> String {
     let saved = s.saved.contains(&t.id);
     format!(
-        r#"<button class="tlike {}" data-like="{i}" title="{}"><img class="ico art" src="art/icons/{}.png" alt="" draggable="false"></button>"#,
+        r#"<button class="tlike {}" data-like="{i}" title="{}">{}</button>"#,
         if saved { "on" } else { "" },
         if saved { "remove from Liked Songs" } else { "save to Liked Songs" },
-        if saved { "liked" } else { "add" },
+        like_mark(saved),
     )
+}
+
+/// The liked / not liked mark: the drawn hearts, or Spotify's check / plus in its theme.
+pub fn like_mark(saved: bool) -> String {
+    if crate::icons::plain() {
+        icon(if saved { "check-circle" } else { "plus-circle" })
+    } else {
+        format!(r#"<img class="ico art" src="art/icons/{}.png" alt="" draggable="false">"#, if saved { "liked" } else { "add" })
+    }
 }
 
 pub struct RowOpts {
