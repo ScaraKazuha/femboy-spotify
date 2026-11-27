@@ -121,6 +121,8 @@ const ICON_ART = {
   following: 'following',
   'save-album': 'save-album',
   'album-saved': 'album-saved',
+  moon: 'theme-dark',
+  sun: 'theme-light',
 };
 
 function icon(name, cls = '') {

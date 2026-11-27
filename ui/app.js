@@ -1690,11 +1690,10 @@ document.querySelectorAll('.side-btn[data-nav]').forEach((b) => b.addEventListen
 
 $('btn-theme').onclick = () => {
   const c = themeChoice();
-  const mark = (k) => (c === k ? 'check-circle' : '');
   showMenu([
-    { icon: mark('light') || 'moon', label: 'Light', run: () => setTheme('light') },
-    { icon: mark('dark') || 'sun', label: 'Dark', run: () => setTheme('dark') },
-    { icon: mark('auto') || 'devices', label: 'Same as Windows', run: () => setTheme('auto') },
+    { icon: 'sun', label: 'Light', on: c === 'light', run: () => setTheme('light') },
+    { icon: 'moon', label: 'Dark', on: c === 'dark', run: () => setTheme('dark') },
+    { icon: 'devices', label: 'Same as Windows', on: c === 'auto', run: () => setTheme('auto') },
   ], $('btn-theme'));
 };
 $('btn-home').onclick = () => go({ name: 'home' });

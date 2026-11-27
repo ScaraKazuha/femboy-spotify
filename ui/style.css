@@ -1453,3 +1453,7 @@ html.theme-switching, html.theme-switching *, html.theme-switching *::before, ht
 .home-btn.on { background: #fff; }
 [data-theme="dark"] .home-btn.on { background: #4a2f52; }
 [data-theme="dark"] .section-head .line .ico { background: #2a1c33; }
+/* the chosen option in a menu (theme) */
+.menu-item.on { color: var(--pink-2); font-weight: 700; }
+.menu-item.on::after { content: "✓"; margin-left: auto; padding-left: 10px; }
+#btn-theme > .ico.art { width: 32px; height: 32px; }
