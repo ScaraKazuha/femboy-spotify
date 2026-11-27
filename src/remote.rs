@@ -60,7 +60,11 @@ pub struct RemoteState {
     pub repeat_track: bool,
     /// active device volume, 0..=100
     pub volume: Option<u16>,
+    /// what plays next (queued songs first, then the rest of the context)
     pub next_uris: Vec<String>,
+    /// songs you put in the queue yourself ("Next in queue")
+    pub queue_uris: Vec<String>,
+    pub queue_revision: String,
 }
 
 type Listener = Box<dyn Fn(RemoteState) + Send + Sync>;
@@ -271,6 +275,13 @@ impl Remote {
                 st.repeat_context = o.repeating_context;
                 st.repeat_track = o.repeating_track;
             }
+            st.queue_uris = p
+                .next_tracks
+                .iter()
+                .filter(|t| t.provider == "queue" && t.uri.starts_with("spotify:track:"))
+                .map(|t| t.uri.clone())
+                .collect();
+            st.queue_revision = p.queue_revision.clone();
             st.next_uris = p
                 .next_tracks
                 .iter()
@@ -390,6 +401,28 @@ impl Remote {
                 "endpoint": "add_to_queue",
                 "track": { "uri": track_uri, "metadata": { "is_queued": "true" }, "provider": "queue" },
             }),
+        )
+        .await
+    }
+
+    /// Drops the songs you queued yourself; the rest of the context keeps playing.
+    pub async fn clear_queue(&self) -> Result<()> {
+        let (next, prev, revision) = {
+            let guard = self.cluster.lock().unwrap();
+            let p = guard
+                .as_ref()
+                .and_then(|c| c.player_state.as_ref())
+                .ok_or_else(|| anyhow!("nothing is playing"))?;
+            let keep = |t: &librespot::protocol::player::ProvidedTrack| {
+                json!({ "uri": t.uri, "uid": t.uid, "provider": t.provider, "metadata": t.metadata })
+            };
+            let next: Vec<Value> = p.next_tracks.iter().filter(|t| t.provider != "queue").map(keep).collect();
+            let prev: Vec<Value> = p.prev_tracks.iter().map(keep).collect();
+            (next, prev, p.queue_revision.clone())
+        };
+        self.command(
+            None,
+            json!({ "endpoint": "set_queue", "next_tracks": next, "prev_tracks": prev, "queue_revision": revision }),
         )
         .await
     }

@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use femboy_spotify::{
-    api::{AlbumPage, Api, ArtistPage, LyricLine, Me, Playlist, Track, encode_query},
+    api::{AlbumPage, Api, ArtistPage, Card, LyricLine, Me, Playlist, SearchResults, Track, encode_query},
     auth::{self, Login},
     remote::{Remote, RemoteState},
 };
@@ -199,6 +199,64 @@ async fn playlist_add(state: State<'_, AppState>, playlist: String, uri: String)
 #[tauri::command]
 async fn playlist_remove(state: State<'_, AppState>, playlist: String, uri: String) -> CmdResult<()> {
     state.core().await?.api.playlist_remove(&playlist, &uri).await.map_err(err)
+}
+
+/// Where you listened lately, from Spotify (playlists, albums, artists).
+#[tauri::command]
+async fn recent_spotify(state: State<'_, AppState>) -> CmdResult<Vec<Card>> {
+    state.core().await?.api.recent().await.map_err(err)
+}
+
+#[tauri::command]
+async fn search_all(state: State<'_, AppState>, q: String) -> CmdResult<SearchResults> {
+    state.core().await?.api.search_all(&q).await.map_err(err)
+}
+
+/// "artist" = followed artists, "collection" = Liked Songs + saved albums.
+#[tauri::command]
+async fn collection_set(state: State<'_, AppState>, set: String) -> CmdResult<Vec<String>> {
+    if set != "artist" && set != "collection" {
+        return Err(format!("unknown set {set}"));
+    }
+    state.core().await?.api.collection_set(&set).await.map_err(err)
+}
+
+/// Follow / unfollow an artist, save / remove an album.
+#[tauri::command]
+async fn set_followed(state: State<'_, AppState>, uri: String, on: bool) -> CmdResult<()> {
+    let set = if uri.starts_with("spotify:artist:") {
+        "artist"
+    } else if uri.starts_with("spotify:album:") {
+        "collection"
+    } else {
+        return Err(format!("can't save {uri}"));
+    };
+    state.core().await?.api.collection_write(set, &uri, on).await.map_err(err)
+}
+
+#[tauri::command]
+async fn playlist_create(state: State<'_, AppState>, name: String) -> CmdResult<String> {
+    state.core().await?.api.playlist_create(name.trim()).await.map_err(err)
+}
+
+#[tauri::command]
+async fn playlist_rename(state: State<'_, AppState>, playlist: String, name: String) -> CmdResult<()> {
+    state.core().await?.api.playlist_rename(&playlist, name.trim()).await.map_err(err)
+}
+
+#[tauri::command]
+async fn playlist_unfollow(state: State<'_, AppState>, playlist: String) -> CmdResult<()> {
+    state.core().await?.api.playlist_unfollow(&playlist).await.map_err(err)
+}
+
+#[tauri::command]
+async fn tracks_info(state: State<'_, AppState>, uris: Vec<String>) -> CmdResult<Vec<Track>> {
+    state.core().await?.api.tracks_by_uri(&uris).await.map_err(err)
+}
+
+#[tauri::command]
+async fn clear_queue(state: State<'_, AppState>) -> CmdResult<()> {
+    state.core().await?.remote.clear_queue().await.map_err(err)
 }
 
 #[tauri::command]
@@ -713,6 +771,15 @@ fn main() {
             playlist_add,
             playlist_remove,
             add_to_queue,
+            recent_spotify,
+            search_all,
+            collection_set,
+            set_followed,
+            playlist_create,
+            playlist_rename,
+            playlist_unfollow,
+            clear_queue,
+            tracks_info,
             lyrics,
             remote_state,
             refresh_devices,

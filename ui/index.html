@@ -168,6 +168,19 @@
     </div>
   </div>
 
+  <!-- name / confirm dialog (new playlist, rename, delete) -->
+  <div class="overlay hidden" id="askbox">
+    <div class="card ask-card">
+      <h2 id="ask-title"></h2>
+      <p id="ask-text" class="hidden"></p>
+      <input type="text" id="ask-input" maxlength="100" spellcheck="false" autocomplete="off">
+      <div class="custom-actions">
+        <button class="chip" id="ask-cancel">cancel</button>
+        <button class="pink-btn" id="ask-ok">save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- auto-update -->
   <div class="overlay hidden" id="update">
     <div class="card update-card">

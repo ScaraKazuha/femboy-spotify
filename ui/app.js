@@ -99,9 +99,6 @@ function remember(t) {
   store.set('history', h.slice(0, 100));
 }
 
-function openRecent() {
-  go({ name: 'list', kind: 'recent', title: 'Recently played', sub: 'what you listened to lately', tracks: store.get('history', []) });
-}
 
 async function openPlaylist(p) {
   const view = { name: 'list', kind: 'playlist', id: p.id, title: p.name, sub: p.owner ? `by ${p.owner}` : 'playlist', image: p.image, tracks: null, loading: true };
@@ -116,13 +113,15 @@ async function doSearch(q) {
   q = q.trim();
   if (q.length < 2) return;
   const seq = ++searchSeq;
-  const view = { name: 'list', kind: 'search', q, title: `"${q}"`, sub: 'search results', tracks: null, loading: true };
-  go(view, { push: S.view.kind !== 'search' });
+  const view = { name: 'search', kind: 'search', q, title: `"${q}"`, tab: S.view.name === 'search' ? S.view.tab : 'all', tracks: [], loading: true };
+  go(view, { push: S.view.name !== 'search' });
   try {
-    const tracks = await invoke('search', { q });
-    cacheTracks(tracks);
+    const r = await invoke('search_all', { q });
+    cacheTracks(r.tracks);
+    rememberCards([...r.artists, ...r.albums]);
     if (seq !== searchSeq) return;
-    view.tracks = tracks;
+    view.results = r;
+    view.tracks = r.tracks;
     view.loading = false;
     if (S.view === view) render();
   } catch (e) { fail(e); }
@@ -141,9 +140,11 @@ function render() {
   if (v.name === 'home') main.innerHTML = homeHtml();
   else if (v.name === 'library') main.innerHTML = libraryHtml();
   else if (v.name === 'list') main.innerHTML = listHtml(v);
-  else if (v.name === 'queue') main.innerHTML = listHtml({ kind: 'queue', title: 'Up next', sub: S.context ? `playing from ${S.context}` : 'your queue', tracks: S.queue });
+  else if (v.name === 'queue') main.innerHTML = queueHtml(v);
   else if (v.name === 'lyrics') main.innerHTML = lyricsViewHtml();
   else if (v.name === 'artist') main.innerHTML = artistHtml(v);
+  else if (v.name === 'search') main.innerHTML = searchHtml(v);
+  else if (v.name === 'recent') main.innerHTML = recentHtml(v);
   hydrateIcons(main);
   fitHeroTitle();
   updateSidebar();
@@ -268,6 +269,7 @@ function libraryHtml() {
       <div class="list-meta">${S.playlists.length} playlists</div>
     </div></div>
     <div class="cards">
+      <button class="card-item" id="create-playlist"><div class="cov create-art">${icon('plus')}</div><div class="t">Create playlist</div><div class="st">a new one, just yours</div></button>
       <button class="card-item" data-open="liked"><div class="cov liked-art">${icon('heart')}</div><div class="t">Liked Songs</div><div class="st">♡</div></button>
       <button class="card-item" data-open="dj"><img class="cov dj-art" src="art/headphones.png" alt=""><div class="t">DJ X</div><div class="st">Spotify DJ ♪</div></button>
       ${S.playlists.map(cardHtml).join('')}
@@ -282,15 +284,26 @@ function listHtml(v) {
   let body;
   if (v.loading) body = loadingHtml();
   else if (!v.tracks?.length) body = `<div class="empty"><div class="big">(｡•́︿•̀｡)</div>nothing here yet~</div>`;
-  else body = tracksHtml(v.tracks, v.kind, { album: v.kind !== 'album' });
+  else {
+    v.shown = shownTracks(v);
+    body = v.shown.length ? tracksHtml(v.shown, v.kind, rowOpts(v)) : '<div class="tracks"><div class="empty small">no songs match (｡•́︿•̀｡)</div></div>';
+  }
+  const total = (v.tracks || []).reduce((s, t) => s + (t.duration_ms || 0), 0);
+  const albumSaved = v.kind === 'album' && S.savedAlbums?.has(v.uri);
+  const hasMenu = ['liked', 'playlist', 'album', 'radio'].includes(v.kind);
   return `
     <div class="list-head">${cover}<div>
       <div class="list-kind">${kinds[v.kind] || ''}</div>
       <h1 class="list-title" style="font-size:${(v.title || '').length > 24 ? 40 : 60}px">${esc(v.title || '')}</h1>
-      <div class="list-meta">${v.subHtml || esc(v.sub || '')}${v.tracks?.length ? ` · ${v.tracks.length} songs` : ''}</div>
+      <div class="list-meta">${v.subHtml || esc(v.sub || '')}${v.tracks?.length ? ` · ${v.tracks.length} songs, ${fmtLong(total)}` : ''}</div>
     </div></div>
-    ${v.tracks?.length ? `<div class="list-actions"><button class="round-play" id="list-play" title="play">${icon('play')}</button>
-      <button class="icon-btn" id="list-shuffle" title="shuffle play">${icon('shuffle')}</button></div>` : ''}
+    ${v.tracks?.length ? `<div class="list-actions">
+      <button class="round-play" id="list-play" title="play">${icon('play')}</button>
+      <button class="icon-btn" id="list-shuffle" title="shuffle play">${icon('shuffle')}</button>
+      ${v.kind === 'album' ? `<button class="icon-btn save-btn ${albumSaved ? 'on' : ''}" id="album-save" title="${albumSaved ? 'remove from Your Library' : 'save to Your Library'}"><img class="ico art" src="art/icons/${albumSaved ? 'liked' : 'add'}.png" alt=""></button>` : ''}
+      ${hasMenu ? `<button class="icon-btn" id="list-more" title="more options for ${esc(v.title || '')}">${icon('dots')}</button>` : ''}
+      ${listToolsHtml(v)}
+    </div>` : ''}
     ${body}`;
 }
 
@@ -306,7 +319,21 @@ function artistLinks(t) {
 
 // the tracks behind the rows on screen (row data-index points into this)
 function viewTracks() {
-  return S.view.name === 'queue' ? S.queue : (S.view.tracks || []);
+  return S.view.shown || S.view.tracks || [];
+}
+
+// play row i of what's on screen (sorted / filtered lists send the list itself)
+function playRow(i) {
+  const v = S.view;
+  const list = viewTracks();
+  if (!list[i]) return;
+  if (v.name === 'queue') return playFrom(list, i, S.context || 'queue', null);
+  playFrom(list, i, v.title, isReordered(v) ? null : contextOf(v));
+}
+
+function selectRow(i) {
+  main.querySelectorAll('.trow.selected').forEach((r) => r.classList.remove('selected'));
+  main.querySelector(`.trow[data-index="${i}"]`)?.classList.add('selected');
 }
 
 function likeButton(t, i) {
@@ -314,17 +341,42 @@ function likeButton(t, i) {
   return `<button class="tlike ${saved ? 'on' : ''}" data-like="${i}" title="${saved ? 'remove from Liked Songs' : 'save to Liked Songs'}"><img class="ico art" src="art/icons/${saved ? 'liked' : 'add'}.png" alt="" draggable="false"></button>`;
 }
 
-function tracksHtml(tracks, kind, { album = true } = {}) {
+// "7 minutes ago", "2 days ago", "3 weeks ago", then a date — like Spotify's "Date added"
+function ago(ms) {
+  if (!ms) return '';
+  const s = (Date.now() - ms) / 1000;
+  const n = (v, unit) => `${v} ${unit}${v === 1 ? '' : 's'} ago`;
+  if (s < 60) return 'just now';
+  if (s < 3600) return n(Math.floor(s / 60), 'minute');
+  if (s < 86400) return n(Math.floor(s / 3600), 'hour');
+  if (s < 7 * 86400) return n(Math.floor(s / 86400), 'day');
+  if (s < 30 * 86400) return n(Math.floor(s / (7 * 86400)), 'week');
+  return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// "26 hr 32 min" / "3 min 20 sec"
+function fmtLong(ms) {
+  const m = Math.round(ms / 60000);
+  if (m >= 60) return `${Math.floor(m / 60)} hr ${m % 60} min`;
+  const s = Math.round(ms / 1000);
+  return m >= 1 ? `${Math.floor(s / 60)} min ${s % 60} sec` : `${s} sec`;
+}
+
+// `offset` numbers the rows when one list is split into sections (the queue)
+function tracksHtml(tracks, kind, { album = true, dates = false, offset = 0, head = true } = {}) {
   const cur = current();
-  return `<div class="tracks ${album ? '' : 'no-album'}">
-    <div class="trow head"><div class="tnum">#</div><div>title</div>${album ? '<div>album</div>' : ''}<div></div><div class="tdur">time</div><div></div></div>
-    ${tracks.map((t, i) => {
-      const playing = kind === 'queue' ? i === S.index : cur && cur.uri === t.uri;
+  const cls = [album ? '' : 'no-album', dates ? 'has-date' : ''].join(' ');
+  return `<div class="tracks ${cls}">
+    ${head ? `<div class="trow head"><div class="tnum">#</div><div>title</div>${album ? '<div>album</div>' : ''}${dates ? '<div>date added</div>' : ''}<div></div><div class="tdur">time</div><div></div></div>` : ''}
+    ${tracks.map((t, n) => {
+      const i = n + offset;
+      const playing = cur && cur.uri === t.uri;
       const albumCell = t.album_uri ? `<span class="alink" data-album="${esc(t.album_uri)}">${esc(t.album)}</span>` : esc(t.album || '');
-      return `<div class="trow ${playing ? 'playing' : ''}" data-index="${i}">
-        <div class="tnum">${playing ? '♪' : i + 1}</div>
+      return `<div class="trow ${playing ? 'playing' : ''}" data-index="${i}" data-n="${n + 1}">
+        <div class="tnum"><span class="n">${playing ? '♪' : n + 1}</span><button class="tplay" data-play="${i}" title="play ${esc(t.name)}">${icon('play')}</button></div>
         <div class="tmain"><img src="${img(t.image)}" alt="" loading="lazy"><div class="ttext"><div class="tname">${esc(t.name)}</div><div class="tartist">${artistLinks(t)}</div></div></div>
         ${album ? `<div class="talbum">${albumCell}</div>` : ''}
+        ${dates ? `<div class="tdate">${ago(t.added_at)}</div>` : ''}
         ${likeButton(t, i)}
         <div class="tdur">${fmt(t.duration_ms)}</div>
         <button class="tmore" data-more="${i}" title="more options for ${esc(t.name)}">${icon('dots')}</button>
@@ -332,6 +384,49 @@ function tracksHtml(tracks, kind, { album = true } = {}) {
     }).join('')}
   </div>`;
 }
+
+/* playlist search + sort (what the rows show; rows point into view.shown) */
+const SORTS = { custom: 'Custom order', title: 'Title', artist: 'Artist', album: 'Album', added: 'Date added', duration: 'Duration' };
+function shownTracks(v) {
+  let list = v.tracks || [];
+  const q = (v.filterText || '').trim().toLowerCase();
+  if (q) list = list.filter((t) => `${t.name} ${t.artists} ${t.album}`.toLowerCase().includes(q));
+  // text sorts keep songs with no name / artist / album at the end
+  const text = (f) => (a, b) => (!f(a)) - (!f(b)) || (f(a) || '').localeCompare(f(b) || '');
+  const by = {
+    title: text((t) => t.name),
+    artist: text((t) => t.artists),
+    album: text((t) => t.album),
+    added: (a, b) => (b.added_at || 0) - (a.added_at || 0),
+    duration: (a, b) => a.duration_ms - b.duration_ms,
+  }[v.sortKey];
+  if (by) list = list.slice().sort(by);
+  return list;
+}
+const isReordered = (v) => !!((v.filterText || '').trim() || (v.sortKey && v.sortKey !== 'custom'));
+
+function listToolsHtml(v) {
+  if (!['liked', 'playlist', 'album'].includes(v.kind)) return '';
+  return `<div class="list-tools">
+    <label class="list-find ${v.filterText ? 'open' : ''}" title="search in ${esc(v.title || 'this list')}">
+      ${icon('search')}<input id="list-find" type="text" placeholder="Search in ${v.kind === 'album' ? 'album' : 'playlist'}" value="${esc(v.filterText || '')}" spellcheck="false" autocomplete="off">
+    </label>
+    ${v.kind !== 'album' ? `<button class="chip sort-btn" id="list-sort" title="sort">${esc(SORTS[v.sortKey || 'custom'])} ${icon('queue')}</button>` : ''}
+  </div>`;
+}
+
+// re-draw only the rows (keeps the search box focused while typing)
+function refreshRows() {
+  const v = S.view;
+  const box = main.querySelector('.tracks');
+  if (!box || !v.tracks) return render();
+  v.shown = shownTracks(v);
+  const tmp = document.createElement('div');
+  tmp.innerHTML = v.shown.length ? tracksHtml(v.shown, v.kind, rowOpts(v)) : '<div class="tracks"><div class="empty small">no songs match (｡•́︿•̀｡)</div></div>';
+  box.replaceWith(tmp.firstElementChild);
+  hydrateIcons(main);
+}
+const rowOpts = (v) => ({ album: v.kind !== 'album', dates: v.kind === 'liked' || v.kind === 'playlist' });
 
 /* ───────────── artist & album pages ───────────── */
 
@@ -377,6 +472,271 @@ async function openRadio(t) {
   if (S.view === view) render();
 }
 
+/* ───────────── cards (playlists / albums / artists) ───────────── */
+
+function cardHtml2(c) {
+  const round = c.kind === 'artist' ? 'round' : '';
+  return `<button class="card-item ${round}" data-card="${esc(c.uri)}">
+      <img class="cov" src="${c.image ? img(c.image) : PLACEHOLDER}" alt="" loading="lazy">
+      <div class="t">${esc(c.name)}</div>
+      <div class="st">${esc(c.sub || c.kind)}</div>
+    </button>`;
+}
+
+function openCard(uri) {
+  if (uri.startsWith('spotify:artist:')) return openArtist(uri);
+  if (uri.startsWith('spotify:album:')) return openAlbum(uri);
+  if (uri.includes(':collection')) return openLiked();
+  if (uri.startsWith('spotify:playlist:')) {
+    const id = uri.split(':').pop();
+    const known = S.playlists.find((p) => p.id === id) || S.homeItems?.get(id);
+    const c = S.cards?.get(uri);
+    return openPlaylist(known || { id, name: c?.name || 'playlist', owner: c?.sub, image: c?.image });
+  }
+}
+const rememberCards = (cards) => { S.cards ||= new Map(); cards.forEach((c) => S.cards.set(c.uri, c)); };
+
+/* ───────────── search with tabs ───────────── */
+
+function searchHtml(v) {
+  const r = v.results;
+  const tabs = [['all', 'All'], ['songs', 'Songs'], ['artists', 'Artists'], ['albums', 'Albums']]
+    .map(([k, l]) => `<button class="chip ${v.tab === k ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('');
+  let body;
+  if (v.loading || !r) body = loadingHtml();
+  else if (!r.tracks.length) body = `<div class="empty"><div class="big">(｡•́︿•̀｡)</div>nothing found for "${esc(v.q)}"</div>`;
+  else if (v.tab === 'songs') body = tracksHtml(r.tracks, 'search');
+  else if (v.tab === 'artists') body = `<div class="cards">${r.artists.map(cardHtml2).join('')}</div>`;
+  else if (v.tab === 'albums') body = `<div class="cards">${r.albums.map(cardHtml2).join('')}</div>`;
+  else {
+    const top = r.artists[0];
+    body = `<div class="search-top">
+        ${top ? `<div><h2 class="mini-head">Top result</h2>
+          <button class="top-result" data-card="${esc(top.uri)}"><img src="${top.image ? img(top.image) : PLACEHOLDER}" alt=""><div class="t">${esc(top.name)}</div><div class="st">artist</div></button></div>` : ''}
+        <div class="search-songs"><h2 class="mini-head">Songs</h2>${tracksHtml(r.tracks.slice(0, 4), 'search', { album: false, head: false })}</div>
+      </div>
+      ${r.artists.length ? `${sectionHead('Artists')}<div class="cards">${r.artists.slice(0, 6).map(cardHtml2).join('')}</div>` : ''}
+      ${r.albums.length ? `${sectionHead('Albums')}<div class="cards">${r.albums.slice(0, 6).map(cardHtml2).join('')}</div>` : ''}`;
+  }
+  return `<div class="search-page"><div class="chips search-tabs">${tabs}</div>${body}</div>`;
+}
+
+/* ───────────── recently played (from Spotify) ───────────── */
+
+async function openRecent() {
+  const history = store.get('history', []);
+  const view = { name: 'recent', title: 'Recently played', cards: S.recentCards || null, tracks: history };
+  go(view);
+  try {
+    const cards = await invoke('recent_spotify');
+    rememberCards(cards);
+    S.recentCards = cards;
+    view.cards = cards;
+  } catch (e) { view.cards = []; view.error = String(e); }
+  if (S.view === view) render();
+}
+
+function recentHtml(v) {
+  return `
+    <div class="list-head"><div class="list-cover recent-art">${icon('pie')}</div><div>
+      <div class="list-kind">history</div>
+      <h1 class="list-title">Recently played</h1>
+      <div class="list-meta">where you listened lately, on any device</div>
+    </div></div>
+    ${v.cards === null ? loadingHtml() : v.cards.length ? `<div class="cards">${v.cards.map(cardHtml2).join('')}</div>` : `<div class="empty small">${esc(v.error || 'nothing yet~')}</div>`}
+    ${v.tracks.length ? `${sectionHead('Songs you played here')}${tracksHtml(v.tracks, 'recent')}` : ''}`;
+}
+
+/* ───────────── queue (like Spotify's) ───────────── */
+
+async function openQueue() {
+  const view = { name: 'queue', title: 'Queue', tracks: [] };
+  go(view);
+  await refreshQueue();
+}
+
+// fetch info for queued uris we haven't seen yet, then draw
+async function refreshQueue() {
+  const v = S.view;
+  if (v.name !== 'queue') return;
+  const uris = [...(S.queueUris || []), ...(S.nextUris || [])];
+  const missing = uris.filter((u) => !S.cache.has(u));
+  if (missing.length) {
+    try { cacheTracks(await invoke('tracks_info', { uris: missing })); } catch { /* show what we have */ }
+  }
+  if (S.view === v) render();
+}
+
+function queueHtml(v) {
+  const queued = (S.queueUris || []).map((u) => S.cache.get(u)).filter(Boolean);
+  const rest = (S.nextUris || []).filter((u) => !(S.queueUris || []).includes(u)).map((u) => S.cache.get(u)).filter(Boolean);
+  v.tracks = [...queued, ...rest];
+  v.shown = null;
+  const now = current();
+  return `
+    <div class="list-head"><div class="list-cover recent-art">${icon('queue')}</div><div>
+      <div class="list-kind">queue</div><h1 class="list-title">Queue</h1>
+      <div class="list-meta">${S.activeDeviceName ? `playing on ${esc(S.activeDeviceName)}` : 'nothing is playing'}</div>
+    </div></div>
+    ${now ? `${sectionHead('Now playing')}
+      <div class="tracks now-row"><div class="trow playing"><div class="tnum"><span class="n">♪</span></div>
+        <div class="tmain"><img src="${img(now.image)}" alt=""><div class="ttext"><div class="tname">${esc(now.name)}</div><div class="tartist">${artistLinks(now)}</div></div></div>
+        <div class="talbum">${now.album_uri ? `<span class="alink" data-album="${esc(now.album_uri)}">${esc(now.album || '')}</span>` : esc(now.album || '')}</div>
+        <div></div><div class="tdur">${fmt(now.duration_ms || 0)}</div><div></div></div></div>` : ''}
+    ${queued.length ? `<div class="queue-head">${sectionHead('Next in queue')}<button class="chip" id="queue-clear">Clear queue</button></div>
+      ${tracksHtml(queued, 'queue', { head: false })}` : ''}
+    ${rest.length ? `${sectionHead(`Next from: ${S.context || 'what\'s playing'}`)}${tracksHtml(rest, 'queue', { head: false, offset: queued.length })}` : ''}
+    ${!now && !v.tracks.length ? `<div class="empty"><div class="big">♪</div>play something and it shows up here~</div>` : ''}`;
+}
+
+async function clearQueue() {
+  try {
+    await invoke('clear_queue');
+    S.queueUris = [];
+    render();
+    toast('queue cleared');
+  } catch (e) { handleRemoteError(e); }
+}
+
+/* ───────────── follow artists, save albums ───────────── */
+
+async function loadFollows() {
+  try {
+    const [artists, coll] = await Promise.all([invoke('collection_set', { set: 'artist' }), invoke('collection_set', { set: 'collection' })]);
+    S.followed = new Set(artists);
+    S.savedAlbums = new Set(coll.filter((u) => u.startsWith('spotify:album:')));
+  } catch { S.followed ||= new Set(); S.savedAlbums ||= new Set(); }
+}
+
+async function toggleFollow(uri) {
+  if (!uri) return;
+  const artist = uri.startsWith('spotify:artist:');
+  const set = artist ? (S.followed ||= new Set()) : (S.savedAlbums ||= new Set());
+  const on = !set.has(uri);
+  const apply = (v) => { if (v) set.add(uri); else set.delete(uri); render(); };
+  apply(on);
+  try {
+    await invoke('set_followed', { uri, on });
+    toast(artist ? (on ? 'following ♡' : 'unfollowed') : (on ? 'saved to Your Library ♡' : 'removed from Your Library'));
+  } catch (e) { apply(!on); toast(`couldn't update: ${e}`); }
+}
+
+/* ───────────── your own playlists ───────────── */
+
+// small pink dialog asking for a name (or a yes/no when `confirmOnly`)
+function askName({ title, value = '', ok = 'save', confirmOnly = false, text = '' }) {
+  return new Promise((resolve) => {
+    const box = $('askbox');
+    $('ask-title').textContent = title;
+    $('ask-text').textContent = text;
+    $('ask-text').classList.toggle('hidden', !text);
+    const input = $('ask-input');
+    input.classList.toggle('hidden', confirmOnly);
+    input.value = value;
+    $('ask-ok').textContent = ok;
+    box.classList.remove('hidden');
+    if (!confirmOnly) setTimeout(() => { input.focus(); input.select(); }, 30);
+    const done = (result) => {
+      box.classList.add('hidden');
+      $('ask-ok').onclick = $('ask-cancel').onclick = input.onkeydown = null;
+      resolve(result);
+    };
+    $('ask-ok').onclick = () => done(confirmOnly ? true : input.value.trim() || null);
+    $('ask-cancel').onclick = () => done(null);
+    input.onkeydown = (e) => { if (e.key === 'Enter') $('ask-ok').click(); if (e.key === 'Escape') done(null); };
+  });
+}
+
+async function reloadPlaylists() {
+  try { S.playlists = await invoke('playlists'); } catch { return; }
+  renderSideThumbs();
+}
+
+async function createPlaylist() {
+  const n = S.playlists.filter((p) => p.owner === 'you').length + 1;
+  const name = await askName({ title: 'new playlist ♡', value: `My Playlist #${n}`, ok: 'create' });
+  if (!name) return;
+  try {
+    const id = await invoke('playlist_create', { name });
+    toast(`made ${name} ♡`);
+    await reloadPlaylists();
+    openPlaylist(S.playlists.find((p) => p.id === id) || { id, name, owner: 'you', editable: true });
+  } catch (e) { toast(`couldn't make the playlist: ${e}`); }
+}
+
+async function renamePlaylist(p) {
+  const name = await askName({ title: 'rename playlist', value: p.name, ok: 'rename' });
+  if (!name || name === p.name) return;
+  try {
+    await invoke('playlist_rename', { playlist: p.id, name });
+    p.name = name;
+    if (S.view.kind === 'playlist' && S.view.id === p.id) S.view.title = name;
+    await reloadPlaylists();
+    render();
+    toast('renamed ♡');
+  } catch (e) { toast(`couldn't rename: ${e}`); }
+}
+
+async function removePlaylist(p) {
+  const own = p.owner === 'you';
+  const ok = await askName({
+    title: own ? `delete ${p.name}?` : `remove ${p.name}?`,
+    text: own ? 'It disappears from Your Library.' : 'It leaves Your Library; you can follow it again later.',
+    ok: own ? 'delete' : 'remove',
+    confirmOnly: true,
+  });
+  if (!ok) return;
+  try {
+    await invoke('playlist_unfollow', { playlist: p.id });
+    await reloadPlaylists();
+    toast(own ? 'deleted' : 'removed from Your Library');
+    go({ name: 'home' });
+  } catch (e) { toast(`couldn't remove it: ${e}`); }
+}
+
+/* "•••" next to a playlist's / album's play button */
+function openListMenu(btn) {
+  const v = S.view;
+  const items = [];
+  const link = (u) => `https://open.spotify.com/${u.replace(/^spotify:/, '').replace(':', '/')}`;
+  if (v.tracks?.length) {
+    items.push({ icon: 'queue', label: 'Add to queue', run: () => addAllToQueue(v.tracks) });
+    items.push({ icon: 'shuffle', label: 'Shuffle play', run: () => $('list-shuffle')?.click() });
+  }
+  if (v.kind === 'playlist') {
+    const p = S.playlists.find((x) => x.id === v.id);
+    if (p?.owner === 'you') items.push('-', { icon: 'pen', label: 'Rename', run: () => renamePlaylist(p) }, { icon: 'minus', label: 'Delete', run: () => removePlaylist(p) });
+    else if (p) items.push('-', { icon: 'minus', label: 'Remove from Your Library', run: () => removePlaylist(p) });
+    items.push('-', { icon: 'link', label: 'Copy link to playlist', run: () => copyText(`https://open.spotify.com/playlist/${v.id}`, 'playlist link') });
+  }
+  if (v.kind === 'album') {
+    const saved = S.savedAlbums?.has(v.uri);
+    items.push('-', { art: saved ? 'unlike' : 'add', label: saved ? 'Remove from Your Library' : 'Save to Your Library', run: () => toggleFollow(v.uri) });
+    const firstArtist = v.tracks?.[0]?.artist_list?.[0];
+    if (firstArtist) items.push({ icon: 'user', label: 'Go to artist', run: () => openArtist(firstArtist.uri) });
+    items.push('-', { icon: 'link', label: 'Copy link to album', run: () => copyText(link(v.uri), 'album link') });
+  }
+  if (items.length) showMenu(items, btn);
+}
+
+async function addAllToQueue(tracks) {
+  const list = tracks.slice(0, 50);
+  toast(`adding ${list.length} songs to the queue...`);
+  for (const t of list) {
+    try { await invoke('add_to_queue', { uri: t.uri }); } catch (e) { return handleRemoteError(e); }
+  }
+  toast('added to queue ♪');
+}
+
+function openSortMenu(btn) {
+  const v = S.view;
+  showMenu(Object.entries(SORTS).map(([k, label]) => ({
+    icon: (v.sortKey || 'custom') === k ? 'check-circle' : '',
+    label,
+    run: () => { v.sortKey = k; render(); },
+  })), btn);
+}
+
 function artistHtml(v) {
   if (v.loading) return loadingHtml();
   const cards = (list) => list.map((al) => `<button class="card-item" data-album="${esc(al.uri)}">
@@ -390,8 +750,11 @@ function artistHtml(v) {
       <h1 class="list-title" style="font-size:${v.title.length > 24 ? 40 : 60}px">${esc(v.title)}</h1>
       <div class="list-meta">${[v.albums.length && `${v.albums.length} albums`, v.singles.length && `${v.singles.length} singles & EPs`].filter(Boolean).join(' · ')}</div>
     </div></div>
-    ${v.top.length ? `<div class="list-actions"><button class="round-play" id="list-play" title="play ${esc(v.title)}">${icon('play')}</button>
-      <button class="icon-btn" id="list-shuffle" title="shuffle play">${icon('shuffle')}</button></div>` : ''}
+    <div class="list-actions">
+      ${v.top.length ? `<button class="round-play" id="list-play" title="play ${esc(v.title)}">${icon('play')}</button>
+      <button class="icon-btn" id="list-shuffle" title="shuffle play">${icon('shuffle')}</button>` : ''}
+      <button class="chip follow-btn ${S.followed?.has(v.uri) ? 'active' : ''}" id="artist-follow">${S.followed?.has(v.uri) ? 'Following' : 'Follow'}</button>
+    </div>
     ${v.top.length ? `${sectionHead('Popular')}${tracksHtml(v.top, 'artist')}` : ''}
     ${v.albums.length ? `${sectionHead('Albums')}<div class="cards">${cards(v.albums)}</div>` : ''}
     ${v.singles.length ? `${sectionHead('Singles and EPs')}<div class="cards">${cards(v.singles)}</div>` : ''}`;
@@ -406,7 +769,7 @@ function lyricsViewHtml() {
 
 function updateSidebar() {
   const v = S.view;
-  const active = v.name === 'library' ? 'library' : v.name === 'queue' ? 'queue' : v.kind === 'liked' ? 'liked' : v.kind === 'recent' ? 'recent' : v.kind === 'search' ? 'search' : '';
+  const active = v.name === 'library' ? 'library' : v.name === 'queue' ? 'queue' : v.kind === 'liked' ? 'liked' : v.name === 'recent' ? 'recent' : '';
   document.querySelectorAll('.side-btn[data-nav]').forEach((b) => b.classList.toggle('active', b.dataset.nav === active));
   $('btn-home').style.background = v.name === 'home' ? '#fff' : '';
   $('btn-queue').classList.toggle('active', v.name === 'queue');
@@ -441,11 +804,12 @@ function renderNow() {
   renderPlayState();
   renderLyricsCard();
   // highlight the playing row
+  const list = viewTracks();
   document.querySelectorAll('.trow[data-index]').forEach((row) => {
-    const i = +row.dataset.index;
-    const tr = S.view.name === 'queue' ? (i === S.index) : (S.view.tracks?.[i]?.uri === t?.uri);
+    const tr = list[+row.dataset.index]?.uri === t?.uri;
     row.classList.toggle('playing', !!tr);
-    row.querySelector('.tnum').textContent = tr ? '♪' : i + 1;
+    const n = row.querySelector('.tnum .n');
+    if (n) n.textContent = tr ? '♪' : row.dataset.n;
   });
 }
 
@@ -724,6 +1088,11 @@ async function onRemoteTrack(uri) {
 
 function applyRemote(st) {
   S.devices = st.devices || [];
+  // the queue screen follows what Spotify says comes next
+  const qKey = JSON.stringify([st.queue_uris, st.next_uris]);
+  S.queueUris = st.queue_uris || [];
+  S.nextUris = st.next_uris || [];
+  if (qKey !== S.queueKey) { S.queueKey = qKey; if (S.view.name === 'queue') refreshQueue(); }
   S.djOn = !!st.active_device && st.context_uri === DJ_URI;
   S.activeDevice = st.active_device;
   const active = S.devices.find((d) => d.id === st.active_device);
@@ -1166,10 +1535,20 @@ bindBar($('vol-bar'), (r) => setVolume(r * 100, { live: true }), (r) => setVolum
 
 // clicks inside the main panel (event delegation)
 main.addEventListener('click', (e) => {
-  const el = e.target.closest('[data-artist],[data-album],[data-like],[data-more],[data-filter],[data-open],[data-playlist],[data-index],[data-line],#hero-play,#hero-edit,#list-play,#list-shuffle');
+  const el = e.target.closest('[data-artist],[data-album],[data-like],[data-more],[data-play],[data-card],[data-tab],[data-filter],[data-open],[data-playlist],[data-index],[data-line],#hero-play,#hero-edit,#list-play,#list-shuffle,#list-more,#list-sort,#album-save,#artist-follow,#queue-clear,#create-playlist,.list-find');
   if (!el) return;
+  if (el.classList.contains('list-find')) { el.classList.add('open'); el.querySelector('input').focus(); return; }
   if (el.dataset.artist) return openArtist(el.dataset.artist);
   if (el.dataset.album) return openAlbum(el.dataset.album);
+  if (el.dataset.play !== undefined) return playRow(+el.dataset.play);
+  if (el.dataset.card) return openCard(el.dataset.card);
+  if (el.dataset.tab) { S.view.tab = el.dataset.tab; return render(); }
+  if (el.id === 'list-more') return openListMenu(el);
+  if (el.id === 'list-sort') return openSortMenu(el);
+  if (el.id === 'album-save') return toggleFollow(S.view.uri);
+  if (el.id === 'artist-follow') return toggleFollow(S.view.uri);
+  if (el.id === 'queue-clear') return clearQueue();
+  if (el.id === 'create-playlist') return createPlaylist();
   if (el.dataset.like !== undefined) return toggleSaved(viewTracks()[+el.dataset.like]);
   if (el.dataset.more !== undefined) return openTrackMenu(viewTracks()[+el.dataset.more], el, { index: +el.dataset.more });
   if (el.dataset.filter) {
@@ -1187,23 +1566,30 @@ main.addEventListener('click', (e) => {
     if (ms) seekTo(ms);
     return;
   }
-  if (el.dataset.index !== undefined) {
-    const i = +el.dataset.index;
-    if (S.view.name === 'queue') return playIndex(i);
-    return playFrom(S.view.tracks, i, S.view.title, contextOf(S.view));
-  }
+  // like Spotify: one click selects a song, a double click (or its ▶) plays it
+  if (el.dataset.index !== undefined) return selectRow(+el.dataset.index);
   if (el.id === 'hero-edit') return openCustomize();
   if (el.id === 'hero-play') return playFeatured();
   if (el.id === 'list-play' || el.id === 'list-shuffle') {
-    const isQueue = S.view.name === 'queue';
-    const tracks = isQueue ? S.queue : S.view.tracks;
+    const tracks = viewTracks();
     if (!tracks?.length) return;
     const shuffle = el.id === 'list-shuffle';
     if (shuffle !== S.shuffle) setOption('shuffle', shuffle);
     const start = shuffle ? Math.floor(Math.random() * tracks.length) : 0;
-    if (isQueue) return playIndex(start);
-    return playFrom(tracks, start, S.view.title, contextOf(S.view));
+    return playRow(start);
   }
+});
+main.addEventListener('dblclick', (e) => {
+  const row = e.target.closest('.trow[data-index]');
+  if (row && !e.target.closest('button,.alink')) playRow(+row.dataset.index);
+});
+main.addEventListener('input', (e) => {
+  if (e.target.id !== 'list-find') return;
+  S.view.filterText = e.target.value;
+  refreshRows();
+});
+main.addEventListener('keydown', (e) => {
+  if (e.target.id === 'list-find' && e.key === 'Escape') { S.view.filterText = ''; render(); }
 });
 
 function openPlaylistById(id) {
@@ -1237,9 +1623,12 @@ $('side-thumbs').addEventListener('click', (e) => {
 document.querySelectorAll('.side-btn[data-nav]').forEach((b) => b.addEventListener('click', () => {
   const n = b.dataset.nav;
   if (n === 'library') go({ name: 'library' });
-  else if (n === 'search') $('search').focus();
+  else if (n === 'search') showMenu([
+    { icon: 'plus', label: 'Create playlist', run: createPlaylist },
+    { icon: 'search', label: 'Search', run: () => $('search').focus() },
+  ], { x: b.getBoundingClientRect().right + 8, y: b.getBoundingClientRect().top });
   else if (n === 'liked') openLiked();
-  else if (n === 'queue') go({ name: 'queue' });
+  else if (n === 'queue') openQueue();
   else if (n === 'recent') openRecent();
   else if (n === 'customize') openCustomize();
   else if (n === 'logout') doLogout();
@@ -1334,7 +1723,7 @@ for (const sel of ['.np', '.right-meta']) {
 }
 $('btn-lyrics').onclick = () => (S.view.name === 'lyrics' ? goBack() : go({ name: 'lyrics' }));
 $('lyrics-open').onclick = () => go({ name: 'lyrics' });
-$('btn-queue').onclick = () => (S.view.name === 'queue' ? goBack() : go({ name: 'queue' }));
+$('btn-queue').onclick = () => (S.view.name === 'queue' ? goBack() : openQueue());
 $('btn-devices').onclick = () => toggleDevices();
 // the now-playing side panel (Spotify's "Now playing view" button)
 $('btn-np').onclick = () => {
@@ -1465,7 +1854,7 @@ $('btn-login').onclick = async () => {
   }
 };
 
-const afterLogin = () => { checkPlayer(); return loadLibrary(); };
+const afterLogin = () => { checkPlayer(); loadFollows(); return loadLibrary(); };
 
 async function loadLibrary() {
   invoke('me').then((me) => {
@@ -1604,7 +1993,16 @@ async function demoInvoke(cmd, args = {}) {
     case 'artist_page': return { uri: args.uri, name: 'pastel kid', image: demoCover(5, ''), top: DEMO_TRACKS.slice(0, 5), albums: [1, 2].map((n) => ({ uri: 'spotify:album:a' + n, name: `cute album vol. ${n}`, year: 2026 - n, image: demoCover(n, '') })), singles: [{ uri: 'spotify:album:s1', name: 'strawberry milk', year: 2026, image: demoCover(3, '') }] };
     case 'album_page': return { uri: args.uri, name: 'cute album vol. 1', artists: [{ name: 'pastel kid', uri: 'spotify:artist:demo' }], year: 2025, image: demoCover(1, ''), tracks: DEMO_TRACKS.slice(0, 4) };
     case 'song_radio': return DEMO_TRACKS.slice().reverse();
-    case 'set_saved': case 'playlist_add': case 'playlist_remove': case 'add_to_queue': return null;
+    case 'set_saved': case 'playlist_add': case 'playlist_remove': case 'add_to_queue': case 'set_followed':
+    case 'playlist_rename': case 'playlist_unfollow': case 'clear_queue': return null;
+    case 'playlist_create': return 'pl0';
+    case 'collection_set': return [];
+    case 'tracks_info': return DEMO_TRACKS.filter((t) => args.uris.includes(t.uri));
+    case 'recent_spotify': return DEMO_PLAYLISTS.slice(0, 6).map((p) => ({ uri: 'spotify:playlist:' + p.id, kind: 'playlist', name: p.name, sub: 'playlist', image: p.image }));
+    case 'search_all': {
+      const tracks = DEMO_TRACKS.filter((t) => (t.name + t.artists).toLowerCase().includes(args.q.toLowerCase()));
+      return { tracks, artists: [{ uri: 'spotify:artist:pastelkid', kind: 'artist', name: 'pastel kid', sub: 'artist', image: demoCover(5, '') }], albums: [{ uri: 'spotify:album:a1', kind: 'album', name: 'cute album vol. 1', sub: 'pastel kid', image: demoCover(1, '') }] };
+    }
     case 'spotify_home': return [
       { title: 'Made For cutie', items: ['Daily Mix 1', 'Daily Mix 2', 'Release Radar', 'Discover Weekly'].map((n, i) => ({ id: 'mix' + i, name: n, sub: 'cute songs, mixed for you', image: '' })) },
       { title: 'Your top mixes', items: ['Hyperpop Mix', 'Pastel Mix', 'Night Mix'].map((n, i) => ({ id: 'top' + i, name: n, sub: 'Spotify', image: '' })) },
