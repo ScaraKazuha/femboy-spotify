@@ -1795,7 +1795,19 @@ pub fn play_featured() {
 
 // ---------- auto-update (GitHub Releases) ----------
 
+thread_local! {
+    static UPDATE_CHECKED: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+}
+
+/// A check when the window comes back into view, unless one ran in the last 10 minutes.
+pub fn check_for_update_soon() {
+    if js_sys::Date::now() - UPDATE_CHECKED.with(|c| c.get()) > 10.0 * 60_000.0 {
+        spawn(check_for_update());
+    }
+}
+
 pub async fn check_for_update() {
+    UPDATE_CHECKED.with(|c| c.set(js_sys::Date::now()));
     // offline or no release yet: stay quiet
     let Ok(Some(info)) = invoke::<Option<UpdateInfo>>("check_update", json!({})).await else { return };
     let is_new = st(|s| {

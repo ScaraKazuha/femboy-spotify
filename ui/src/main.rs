@@ -47,7 +47,12 @@ fn main() {
     gloo_timers::callback::Interval::new(250, app::tick).forget();
     motion::start();
     spawn(app::check_for_update());
-    gloo_timers::callback::Interval::new(6 * 60 * 60 * 1000, || spawn(app::check_for_update())).forget();
+    // new versions: every 30 minutes, and when you come back to the window (the app
+    // often stays open for days, in the tray of autostart)
+    gloo_timers::callback::Interval::new(30 * 60 * 1000, || spawn(app::check_for_update())).forget();
+    let back = Closure::<dyn FnMut()>::new(app::check_for_update_soon);
+    let _ = window().add_event_listener_with_callback("focus", back.as_ref().unchecked_ref());
+    back.forget();
     spawn(app::connect_saved());
 
     // demo page with "?shot": a song is already playing (for the README screenshot)
