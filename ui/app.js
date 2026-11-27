@@ -2028,8 +2028,8 @@ async function demoInvoke(cmd, args = {}) {
       return { tracks, artists: [{ uri: 'spotify:artist:pastelkid', kind: 'artist', name: 'pastel kid', sub: 'artist', image: demoCover(5, '') }], albums: [{ uri: 'spotify:album:a1', kind: 'album', name: 'cute album vol. 1', sub: 'pastel kid', image: demoCover(1, '') }] };
     }
     case 'spotify_home': return [
-      { title: 'Made For cutie', items: ['Daily Mix 1', 'Daily Mix 2', 'Release Radar', 'Discover Weekly'].map((n, i) => ({ id: 'mix' + i, name: n, sub: 'cute songs, mixed for you', image: '' })) },
-      { title: 'Your top mixes', items: ['Hyperpop Mix', 'Pastel Mix', 'Night Mix'].map((n, i) => ({ id: 'top' + i, name: n, sub: 'Spotify', image: '' })) },
+      { title: 'Made For cutie', items: ['Daily Mix 1', 'Daily Mix 2', 'Release Radar', 'Discover Weekly', 'Daily Mix 3'].map((n, i) => ({ id: 'mix' + i, name: n, sub: 'cute songs, mixed for you', image: demoCover(i + 3, n) })) },
+      { title: 'Your top mixes', items: ['Hyperpop Mix', 'Pastel Mix', 'Night Mix'].map((n, i) => ({ id: 'top' + i, name: n, sub: 'Spotify', image: demoCover(i + 1, n) })) },
     ];
     case 'check_update': return location.search.includes('update') ? { current: '0.3.0', version: '0.4.0', notes: '- demo update notes\n- even more pink ♡' } : null;
     case 'play_dj': {
@@ -2101,3 +2101,6 @@ function demoState() {
 }
 
 start();
+
+// demo page with "?shot": a song is already playing (for the README screenshot)
+if (DEMO && location.search.includes('shot')) setTimeout(() => playFrom(DEMO_TRACKS, 1, 'Boykisser Mix', null), 400);
