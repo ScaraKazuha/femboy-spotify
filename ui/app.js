@@ -1702,7 +1702,18 @@ $('btn-back').onclick = goBack;
 $('btn-forward').onclick = goForward;
 $('btn-menu').onclick = async () => {
   const v = DEMO ? 'demo' : await TAURI.app.getVersion().catch(() => '?');
-  toast(`femboy spotify v${v} ♡ made with Rust & love`);
+  const auto = await invoke('autostart_get').catch(() => false);
+  showMenu([
+    { icon: 'sparkle', label: `femboy spotify v${v} ♡`, disabled: true },
+    '-',
+    { icon: 'devices', label: 'Start with Windows', on: auto, run: async () => {
+      try {
+        await invoke('autostart_set', { on: !auto });
+        toast(!auto ? 'starts with Windows now ♡' : "won't start with Windows");
+      } catch (e) { toast(`couldn't change it: ${e}`); }
+    } },
+    { icon: 'bell', label: 'Check for updates', run: async () => { await checkForUpdate(); if (!S.update) toast('you have the newest version ♡'); } },
+  ], { x: $('btn-menu').getBoundingClientRect().left, y: $('btn-menu').getBoundingClientRect().bottom + 6 });
 };
 $('btn-bell').onclick = () => (S.update ? showUpdate() : toast('no new notifications ♡'));
 
@@ -1896,9 +1907,9 @@ async function doLogout() {
 $('btn-login').onclick = async () => {
   const btn = $('btn-login');
   btn.disabled = true;
-  btn.textContent = 'waiting for the browser...';
+  btn.textContent = 'waiting for Spotify...';
   $('login-error').classList.add('hidden');
-  $('login-text').textContent = 'finish signing in in your browser, then come back here ♡';
+  $('login-text').textContent = 'sign in in the Spotify window that just opened ♡';
   try {
     await invoke('login');
     $('login').classList.add('hidden');
@@ -2013,13 +2024,20 @@ async function start() {
   setInterval(tick, 250);
   checkForUpdate();
   setInterval(checkForUpdate, 6 * 60 * 60 * 1000);
+  await connectSaved();
+}
+
+// Log in with the saved login. If Spotify can't be reached yet (e.g. right after
+// Windows starts, before the network is up) keep trying instead of asking to sign
+// in again: the saved login is fine.
+async function connectSaved(attempt = 0) {
   try {
     const ok = await invoke('init');
-    if (ok) await afterLogin();
+    if (ok) { if (attempt) toast('connected to Spotify ♡'); await afterLogin(); }
     else $('login').classList.remove('hidden');
   } catch (e) {
-    toast(`couldn't start: ${e}`);
-    $('login').classList.remove('hidden');
+    if (attempt === 0) toast('waiting for the internet to reach Spotify...');
+    setTimeout(() => connectSaved(attempt + 1), Math.min(30000, 5000 * (attempt + 1)));
   }
 }
 
@@ -2059,6 +2077,8 @@ async function demoInvoke(cmd, args = {}) {
     case 'set_saved': case 'playlist_add': case 'playlist_remove': case 'add_to_queue': case 'set_followed':
     case 'playlist_rename': case 'playlist_unfollow': case 'clear_queue': case 'dj_switch': return null;
     case 'local_spotify': return { name: 'DEMO-PC', running: false };
+    case 'autostart_get': return true;
+    case 'autostart_set': return null;
     case 'playlist_create': return 'pl0';
     case 'collection_set': return [];
     case 'tracks_info': return DEMO_TRACKS.filter((t) => args.uris.includes(t.uri));

@@ -66,18 +66,96 @@ async fn connect_session(creds: Credentials) -> Result<Session> {
     Ok(session)
 }
 
-/// Logs in with what was saved last time, if it still works.
+/// Logs in with what was saved last time. `Ok(None)`: nothing saved, or Spotify
+/// turned the saved login down. `Err`: Spotify couldn't be reached (e.g. right
+/// after Windows starts, before the network is up) — the saved login is kept.
 pub async fn connect_cached() -> Result<Option<Login>> {
     let Some(creds) = cache()?.credentials() else {
         return Ok(None);
     };
-    match connect_session(creds).await {
-        Ok(session) => Ok(Some(Login { session })),
-        Err(e) => {
-            log(&format!("saved login did not work: {e:#}"));
-            Ok(None)
+    let mut last = None;
+    for attempt in 1..=4 {
+        match connect_session(creds.clone()).await {
+            Ok(session) => return Ok(Some(Login { session })),
+            Err(e) => {
+                let msg = format!("{e:#}");
+                log(&format!("saved login, attempt {attempt}: {msg}"));
+                let lower = msg.to_lowercase();
+                if lower.contains("bad credentials") || lower.contains("permission denied") || lower.contains("premium") && lower.contains("required") {
+                    return Ok(None); // the saved login itself is no good
+                }
+                last = Some(e);
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
         }
     }
+    Err(last.unwrap_or_else(|| anyhow::anyhow!("could not reach Spotify")))
+}
+
+// ---------- sign-in inside the app (OAuth 2 with PKCE) ----------
+//
+// The sign-in page opens in the app's own window (the built-in player's), so one
+// sign-in also logs the built-in player in. The app catches the redirect to
+// REDIRECT_URI in that window itself; nothing has to listen on the port.
+
+pub const OAUTH_REDIRECT: &str = REDIRECT_URI;
+
+pub struct OAuthStart {
+    /// page to open: Spotify's sign-in, continuing to the consent/redirect
+    pub url: String,
+    pub verifier: String,
+    pub state: String,
+}
+
+fn random_string(len: usize) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+    (0..len).map(|_| CHARS[fastrand::usize(..CHARS.len())] as char).collect()
+}
+
+pub fn oauth_start() -> OAuthStart {
+    use base64::Engine;
+    use sha2::Digest;
+    let verifier = random_string(64);
+    let state = random_string(24);
+    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()));
+    let enc = crate::api::encode_query;
+    let authorize = format!(
+        "https://accounts.spotify.com/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge_method=S256&code_challenge={}&state={}",
+        SessionConfig::default().client_id,
+        enc(REDIRECT_URI),
+        enc(&SCOPES.join(" ")),
+        challenge,
+        state,
+    );
+    let url = format!("https://accounts.spotify.com/login?continue={}", enc(&authorize));
+    OAuthStart { url, verifier, state }
+}
+
+/// Trades the code from the redirect for a token and connects (the login is saved).
+pub async fn oauth_finish(code: &str, verifier: &str) -> Result<Login> {
+    let enc = crate::api::encode_query;
+    let body = format!(
+        "grant_type=authorization_code&code={}&redirect_uri={}&client_id={}&code_verifier={}",
+        enc(code),
+        enc(REDIRECT_URI),
+        SessionConfig::default().client_id,
+        enc(verifier),
+    );
+    let resp = reqwest::Client::new()
+        .post("https://accounts.spotify.com/api/token")
+        .header(reqwest::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(body)
+        .send()
+        .await
+        .context("could not reach Spotify to finish signing in")?;
+    let status = resp.status();
+    let json: serde_json::Value = resp.json().await.context("odd answer from Spotify")?;
+    let Some(token) = json["access_token"].as_str() else {
+        anyhow::bail!("Spotify did not accept the sign-in ({status}): {}", json["error_description"].as_str().unwrap_or("no details"));
+    };
+    log("login: got access token (in-app sign-in)");
+    let session = connect_session(Credentials::with_access_token(token.to_string())).await?;
+    Ok(Login { session })
 }
 
 /// Opens the browser for a Spotify sign-in and connects with the result.

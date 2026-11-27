@@ -33,6 +33,8 @@ struct AppState {
     home: std::sync::Mutex<Option<Vec<Shelf>>>,
     /// pieces of the shelves message while it arrives through the page title
     home_parts: std::sync::Mutex<Vec<Option<String>>>,
+    /// a sign-in in progress: its OAuth state and where to send the code
+    login_wait: std::sync::Mutex<Option<(String, tokio::sync::oneshot::Sender<Result<String, String>>)>>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -111,13 +113,61 @@ async fn init(app: AppHandle, state: State<'_, AppState>) -> CmdResult<bool> {
     }
 }
 
-/// Opens the browser for Spotify sign-in.
+/// One sign-in for everything: Spotify's sign-in page opens in the app's own window
+/// (the built-in player's), which also logs the built-in player in; its redirect is
+/// caught in that window (see `oauth_redirect`) and traded for the app's login.
 #[tauri::command]
 async fn login(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
-    log_line("login: opening browser for Spotify sign-in");
-    let login = auth::login_interactive().await.map_err(err)?;
+    let start = auth::oauth_start();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    *state.login_wait.lock().unwrap() = Some((start.state.clone(), tx));
+    log_line("login: showing Spotify sign-in in the app window");
+    let w = player_window(&app).map_err(err)?;
+    w.navigate(start.url.parse().map_err(err)?).map_err(err)?;
+    w.set_size(tauri::LogicalSize::new(520.0, 760.0)).map_err(err)?;
+    w.center().map_err(err)?;
+    w.set_skip_taskbar(false).map_err(err)?;
+    w.show().map_err(err)?;
+    let _ = w.set_focus();
+
+    let code = tokio::time::timeout(std::time::Duration::from_secs(900), rx)
+        .await
+        .map_err(|_| "sign-in timed out".to_string())?
+        .map_err(|_| "sign-in was cancelled".to_string())??;
+
+    // back to the web player (now signed in too), hidden again
+    let _ = w.hide();
+    let _ = w.set_skip_taskbar(true);
+    let _ = w.navigate(PLAYER_HOME.parse().unwrap());
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.set_focus();
+    }
+    let login = auth::oauth_finish(&code, &start.verifier).await.map_err(err)?;
     log_line("login: signed in, joining Spotify Connect");
-    state.start(&app, login).await
+    state.start(&app, login).await?;
+    let _ = app.emit("player", true);
+    Ok(())
+}
+
+/// The sign-in window reached our redirect address: hand the code (or the error)
+/// to the waiting `login`. Returns true when the url was ours.
+fn oauth_redirect(app: &AppHandle, url: &tauri::Url) -> bool {
+    if !url.as_str().starts_with(auth::OAUTH_REDIRECT) {
+        return false;
+    }
+    let q: std::collections::HashMap<String, String> = url.query_pairs().into_owned().collect();
+    let state = app.state::<AppState>();
+    if let Some((expected, tx)) = state.login_wait.lock().unwrap().take() {
+        let result = match (q.get("code"), q.get("state")) {
+            (Some(code), Some(s)) if *s == expected => Ok(code.clone()),
+            _ => Err(format!(
+                "Spotify sign-in failed: {}",
+                q.get("error").map(String::as_str).unwrap_or("unexpected answer")
+            )),
+        };
+        let _ = tx.send(result);
+    }
+    true
 }
 
 #[tauri::command]
@@ -547,7 +597,11 @@ fn player_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .additional_browser_args(BROWSER_ARGS)
         .initialization_script(HOME_SCRAPER)
         .on_document_title_changed(|w, title| home_piece(w.app_handle(), &title))
-        .on_navigation(player_may_visit)
+        .on_navigation({
+            let app = app.clone();
+            // our sign-in redirect is caught here and never loaded
+            move |url| !oauth_redirect(&app, url) && player_may_visit(url)
+        })
         .on_page_load(|w, p| {
             if p.event() != PageLoadEvent::Finished
                 || p.url().host_str() != Some("open.spotify.com")
@@ -715,6 +769,43 @@ async fn install_update(app: AppHandle) -> CmdResult<()> {
     app.restart();
 }
 
+// ---------- start with Windows ----------
+
+/// Starting with Windows is on by default (asked for at the start); the user can
+/// switch it off in the ••• menu. It lives in the registry (HKCU\…\Run), which also
+/// replaces the old Startup-folder shortcut of earlier versions.
+fn setup_autostart(app: &AppHandle) {
+    use tauri_plugin_autostart::ManagerExt;
+    if let Some(startup) = dirs::data_dir() {
+        let old = startup.join(r"Microsoft\Windows\Start Menu\Programs\Startup\Femboy Spotify.lnk");
+        if old.exists() && std::fs::remove_file(&old).is_ok() {
+            log_line("autostart: removed the old Startup-folder shortcut");
+        }
+    }
+    let marker = auth::data_dir().join("autostart-default-done");
+    if !marker.exists() {
+        match app.autolaunch().enable() {
+            Ok(()) => log_line("autostart: on (default)"),
+            Err(e) => log_line(&format!("autostart: could not turn on: {e}")),
+        }
+        let _ = std::fs::create_dir_all(auth::data_dir());
+        let _ = std::fs::write(marker, b"1");
+    }
+}
+
+#[tauri::command]
+fn autostart_get(app: AppHandle) -> bool {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn autostart_set(app: AppHandle, on: bool) -> CmdResult<()> {
+    use tauri_plugin_autostart::ManagerExt;
+    let al = app.autolaunch();
+    if on { al.enable() } else { al.disable() }.map_err(err)
+}
+
 /// Tells Windows which app this process is. The installer's Start-menu shortcut carries
 /// the same AppUserModelID, so the taskbar ties our window to it and shows its icon
 /// (otherwise Explorer may keep a stale blank icon for the exe path after an update).
@@ -739,13 +830,23 @@ fn main() {
     auth::init_file_log();
     log_line(concat!("femboy spotify ", env!("CARGO_PKG_VERSION"), " started"));
     tauri::Builder::default()
+        // a second launch (autostart + a click, say) just brings this window up
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(main) = app.get_webview_window("main") {
+                let _ = main.unminimize();
+                let _ = main.show();
+                let _ = main.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .manage(AppState::default())
         .setup(|app| {
             if let Some(main) = app.get_webview_window("main") {
                 set_big_icon(&main);
                 fit_zoom(&main.as_ref().window());
             }
+            setup_autostart(app.handle());
             // load the built-in player in the background right away
             if let Err(e) = player_window(app.handle()) {
                 log_line(&format!("player: couldn't create window: {e}"));
@@ -760,10 +861,15 @@ fn main() {
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == PLAYER {
-                    // closing the sign-in window only hides it; the player lives on
+                    // closing the sign-in window only hides it; the player lives on.
+                    // A sign-in waiting on it is cancelled.
                     api.prevent_close();
                     let _ = window.hide();
                     let _ = window.set_skip_taskbar(true);
+                    let state = window.app_handle().state::<AppState>();
+                    if let Some((_, tx)) = state.login_wait.lock().unwrap().take() {
+                        let _ = tx.send(Err("sign-in window was closed".into()));
+                    }
                 } else {
                     // the hidden player would keep the app alive otherwise. Unload it
                     // first so it leaves Spotify Connect instead of lingering as a dead
@@ -814,6 +920,8 @@ fn main() {
             clear_queue,
             dj_switch,
             local_spotify,
+            autostart_get,
+            autostart_set,
             tracks_info,
             lyrics,
             remote_state,

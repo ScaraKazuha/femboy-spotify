@@ -33,7 +33,12 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tauri = { version = "2.12.7", features = ["custom-protocol"] }
 tauri-plugin-updater = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
 tokio = { version = "1.54.1", features = ["full"] }
+# OAuth with PKCE done by the app itself (sign-in happens inside the app's window)
+sha2 = "0.10"
+base64 = "0.22"
 
 [build-dependencies]
 tauri-build = { version = "2.7.6", features = [] }
