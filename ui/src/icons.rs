@@ -166,6 +166,8 @@ pub fn icon_cls(name: &str, cls: &str) -> String {
         if let Some(file) = icon_art(name) {
             return art_img(file, cls);
         }
+    } else if let Some(shape) = crate::spot_icons::spot(name) {
+        return format!(r#"<svg class="ico spot {cls}" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">{shape}</svg>"#);
     }
     format!(
         r#"<svg class="ico {cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{}</svg>"#,

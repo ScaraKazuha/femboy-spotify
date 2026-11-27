@@ -9,6 +9,7 @@ mod events;
 mod icons;
 mod menu;
 mod motion;
+mod spot_icons;
 mod state;
 mod theme;
 mod tips;
