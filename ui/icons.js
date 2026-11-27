@@ -42,19 +42,47 @@ const ICONS = {
   sparkle: '<path fill="currentColor" stroke="none" d="M12 1.5c.6 5.2 2.3 7.6 9.5 10.5-7.2 2.9-8.9 5.3-9.5 10.5-.6-5.2-2.3-7.6-9.5-10.5C9.7 9.1 11.4 6.7 12 1.5z"/>',
 };
 
+// Hand-drawn player buttons (ui/art/icons/*.png). Buttons marked `data-art` use the
+// picture for their icon name; everything else keeps the line icons above.
+const ART = {
+  play: 'play',
+  pause: 'pause',
+  prev: 'previous',
+  next: 'next',
+  shuffle: 'shuffle',
+  repeat: 'repeat',
+  'repeat-one': 'repeat-one',
+  queue: 'queue',
+  volume: 'volume',
+  'volume-off': 'mute',
+  'plus-circle': 'add',
+  'check-circle': 'liked',
+  mic: 'lyrics',
+  devices: 'devices',
+  mini: 'mini-player',
+  fullscreen: 'fullscreen',
+};
+
 function icon(name, cls = '') {
   return `<svg class="ico ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 }
 
+function iconFor(el, name) {
+  if (el.hasAttribute('data-art') && ART[name]) {
+    return `<img class="ico art" src="art/icons/${ART[name]}.png" alt="" draggable="false">`;
+  }
+  return icon(name);
+}
+
 function hydrateIcons(root = document) {
   root.querySelectorAll('[data-icon]').forEach((el) => {
-    if (!el.querySelector(':scope > svg.ico')) el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon));
+    if (!el.querySelector(':scope > .ico')) el.insertAdjacentHTML('afterbegin', iconFor(el, el.dataset.icon));
   });
 }
 
 function setIcon(el, name) {
   el.dataset.icon = name;
-  const svg = el.querySelector(':scope > svg.ico');
-  if (svg) svg.outerHTML = icon(name);
-  else el.insertAdjacentHTML('afterbegin', icon(name));
+  const old = el.querySelector(':scope > .ico');
+  if (old) old.outerHTML = iconFor(el, name);
+  else el.insertAdjacentHTML('afterbegin', iconFor(el, name));
 }

@@ -614,7 +614,7 @@ img { display: block; }
 .player {
   grid-area: player;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
   align-items: center;
   gap: 20px;
   padding: 0 4px 6px;
@@ -672,10 +672,10 @@ img { display: block; }
 }
 .bar:hover .bar-knob, .bar.drag .bar-knob { transform: translateY(-50%) scale(1); }
 
-.extras { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.extras { display: flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; }
 .extras .icon-btn .ico { width: 25px; height: 25px; }
 .extras .ring { width: 44px; height: 44px; }
-.bar.volume { flex: 0 0 110px; margin: 0 6px; }
+.bar.volume { flex: 0 1 96px; min-width: 56px; margin: 0 6px; }
 
 /* the little headphones buddy (shows / hides the now-playing panel) */
 .buddy {
@@ -1025,4 +1025,44 @@ img { display: block; }
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hero-stickers { transform: translateY(-50%) scale(.8); right: 0; }
   .top-left, .top-right { width: auto; }
+}
+
+/* ───────── hand-drawn player buttons (ui/art/icons) ───────── */
+
+.ico.art {
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  transition: transform .15s, opacity .15s, filter .15s;
+}
+[data-art].icon-btn { position: relative; width: 46px; height: 46px; }
+[data-art].icon-btn:hover { background: none; }
+[data-art].icon-btn:hover .ico.art { transform: scale(1.12) rotate(-4deg); }
+[data-art].icon-btn:active .ico.art { transform: scale(.9); }
+.buttons [data-art].icon-btn .ico.art { width: 40px; height: 40px; }
+.extras [data-art].icon-btn { width: 40px; height: 40px; flex: 0 0 auto; }
+.extras [data-art].icon-btn .ico.art { width: 36px; height: 36px; }
+.add-btn[data-art] .ico.art { width: 40px; height: 40px; }
+
+/* play / pause: the picture is the whole button, no pink circle */
+.play-btn[data-art] { width: 66px; height: 66px; background: none; border: 0; }
+.play-btn[data-art] .ico.art { width: 66px; height: 66px; filter: drop-shadow(0 2px 3px rgba(110, 53, 99, .25)); }
+.play-btn[data-art]:hover { transform: none; }
+.play-btn[data-art]:hover .ico.art { transform: scale(1.07); }
+.play-btn[data-art]:active .ico.art { transform: scale(.93); }
+
+/* shuffle / repeat off: faded, like Spotify's grey; on: full colour and a dot */
+#btn-shuffle:not(.active) .ico.art,
+#btn-repeat:not(.active) .ico.art { opacity: .5; filter: saturate(.4); }
+[data-art].icon-btn.active::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: var(--pink-2);
 }
