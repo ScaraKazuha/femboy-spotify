@@ -1066,3 +1066,84 @@ img { display: block; }
   border-radius: 50%;
   background: var(--pink-2);
 }
+
+/* ───────── smooth everything ───────── */
+
+:root {
+  --spring: cubic-bezier(.34, 1.56, .64, 1);   /* a little bounce */
+  --ease: cubic-bezier(.22, .8, .3, 1);        /* soft settle */
+}
+
+/* every button eases its colours, shadows and size instead of snapping (listed by class so it
+   wins over the older per-class transitions above) */
+button, .icon-btn, .play-btn, .side-btn, .home-btn, .chip, .tile, .card-item, .hero-play, .art-play,
+.round-play, .pink-btn, .dev, .avatar, .buddy, .trow, .side-thumbs button, .lyrics-head {
+  transition:
+    background-color .25s var(--ease), color .25s var(--ease), border-color .25s var(--ease),
+    box-shadow .3s var(--ease), opacity .25s var(--ease), filter .25s var(--ease),
+    transform .35s var(--spring);
+}
+button .ico { transition: transform .35s var(--spring), opacity .25s var(--ease), filter .25s var(--ease); }
+.icon-btn:hover .ico:not(.art), .side-btn:hover .ico, .home-btn:hover .ico { transform: scale(1.1); }
+button:active { transition-duration: .12s; }
+
+/* both pictures share one grid cell while they swap, so the button never jumps */
+[data-art] > .ico.art { grid-area: 1 / 1; }
+[data-art].icon-btn .ico.art,
+.play-btn[data-art] .ico.art { transition: transform .35s var(--spring), opacity .3s var(--ease), filter .3s var(--ease); }
+.ico.art.entering { animation: art-in .42s var(--spring) both; }
+.ico.art.leaving { animation: art-out .26s var(--ease) both; pointer-events: none; }
+@keyframes art-in {
+  from { opacity: 0; transform: scale(.55) rotate(-25deg); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes art-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(.55) rotate(25deg); }
+}
+/* shuffle / repeat dot fades in and out */
+[data-art].icon-btn::after { transition: opacity .25s var(--ease), transform .35s var(--spring); }
+[data-art].icon-btn:not(.active)::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: var(--pink-2);
+  opacity: 0;
+  transform: scale(0);
+}
+
+/* ───────── pink tooltips (instead of the browser's black ones) ───────── */
+
+.tip {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  max-width: 320px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: var(--panel-solid);
+  color: var(--plum);
+  border: 2px solid var(--line-strong);
+  box-shadow: 0 8px 22px rgba(120, 60, 110, .18);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px) scale(.94);
+  transition: opacity .18s var(--ease), transform .25s var(--spring);
+}
+.tip.below { transform: translateY(-4px) scale(.94); }
+.tip.show { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ico.art.entering, .ico.art.leaving { animation-duration: 1ms; }
+}

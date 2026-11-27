@@ -1129,7 +1129,73 @@ async function loadLibrary() {
 
 listen('remote', applyRemote);
 
+/* ───────────── pink tooltips ─────────────
+   The browser's own `title` tooltip is a black system box. Every `title` (in the
+   HTML or set later by code) moves to data-tip + aria-label, and we draw our own. */
+
+const tipEl = document.createElement('div');
+tipEl.className = 'tip';
+tipEl.setAttribute('role', 'tooltip');
+document.body.append(tipEl);
+let tipFor = null;
+let tipTimer = 0;
+
+function adoptTitle(el) {
+  const t = el.getAttribute('title');
+  if (t == null) return;
+  el.removeAttribute('title');
+  el.dataset.tip = t;
+  if (t) el.setAttribute('aria-label', t);
+  if (tipFor === el) showTip(el);
+}
+function adoptTitles(root) {
+  if (root.nodeType !== 1) return;
+  if (root.hasAttribute('title')) adoptTitle(root);
+  root.querySelectorAll('[title]').forEach(adoptTitle);
+}
+new MutationObserver((muts) => {
+  for (const m of muts) {
+    if (m.type === 'attributes') adoptTitle(m.target);
+    else m.addedNodes.forEach(adoptTitles);
+  }
+}).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+
+function showTip(el) {
+  const text = el.dataset.tip;
+  if (!text || !el.isConnected) return hideTip();
+  tipEl.textContent = text;
+  const r = el.getBoundingClientRect();
+  const w = tipEl.offsetWidth;
+  const h = tipEl.offsetHeight;
+  const below = r.top - h - 10 < 4;
+  const x = Math.min(Math.max(6, r.left + r.width / 2 - w / 2), innerWidth - w - 6);
+  const y = below ? r.bottom + 10 : r.top - h - 10;
+  tipEl.style.left = `${Math.round(x)}px`;
+  tipEl.style.top = `${Math.round(y)}px`;
+  tipEl.classList.toggle('below', below);
+  tipEl.classList.add('show');
+}
+function hideTip() {
+  clearTimeout(tipTimer);
+  tipFor = null;
+  tipEl.classList.remove('show');
+}
+document.addEventListener('mouseover', (e) => {
+  const el = e.target.closest?.('[data-tip]');
+  if (el === tipFor) return;
+  hideTip();
+  if (!el) return;
+  tipFor = el;
+  tipTimer = setTimeout(() => showTip(el), 380);
+});
+document.addEventListener('mouseout', (e) => {
+  if (tipFor && !tipFor.contains(e.relatedTarget)) hideTip();
+});
+['mousedown', 'wheel', 'keydown'].forEach((ev) => document.addEventListener(ev, hideTip, { passive: true }));
+window.addEventListener('blur', hideTip);
+
 async function start() {
+  adoptTitles(document.body);
   hydrateIcons();
   $('avatar-img').src = PLACEHOLDER;
   drawVolume(S.volume);

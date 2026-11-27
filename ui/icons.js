@@ -81,8 +81,20 @@ function hydrateIcons(root = document) {
 }
 
 function setIcon(el, name) {
+  const old = el.querySelector(':scope > .ico:not(.leaving)');
+  if (old && el.dataset.icon === name) return; // nothing changes: no re-animation
   el.dataset.icon = name;
-  const old = el.querySelector(':scope > .ico');
-  if (old) old.outerHTML = iconFor(el, name);
-  else el.insertAdjacentHTML('afterbegin', iconFor(el, name));
+  if (!old) return el.insertAdjacentHTML('afterbegin', iconFor(el, name));
+  if (!el.hasAttribute('data-art')) { old.outerHTML = iconFor(el, name); return; }
+  // pictures cross-fade: the old one spins out while the new one pops in, in the same spot
+  el.querySelectorAll(':scope > .ico.leaving').forEach((x) => x.remove());
+  old.classList.add('leaving');
+  old.addEventListener('animationend', () => old.remove(), { once: true });
+  setTimeout(() => old.remove(), 600);
+  old.insertAdjacentHTML('afterend', iconFor(el, name).replace('class="ico art"', 'class="ico art entering"'));
+  const fresh = old.nextElementSibling;
+  fresh.addEventListener('animationend', () => fresh.classList.remove('entering'), { once: true });
 }
+
+// load every button picture up front so swaps never flash empty
+Object.values(ART).forEach((f) => { const i = new Image(); i.src = `art/icons/${f}.png`; });
