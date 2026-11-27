@@ -350,15 +350,35 @@ pub fn render_play_state() {
     set_icon(&el("btn-mute"), if muted || volume == 0.0 { "volume-off" } else { "volume" });
 }
 
+thread_local! {
+    /// what `tick` drew last (the page is only touched when something changes)
+    static TICK_LAST: std::cell::RefCell<(String, String, String)> = std::cell::RefCell::default();
+}
+
 pub fn tick() {
+    if document().hidden() {
+        return; // minimized: nothing to draw
+    }
     let (pos, dur, drag) = st(|s| (s.position(), s.duration(), s.seek_drag));
     let pct = if dur > 0.0 { pos / dur * 100.0 } else { 0.0 };
-    if !drag {
-        set_style(&el("seek-fill"), "width", &format!("{pct}%"));
-        set_style(&el("seek-knob"), "left", &format!("{pct}%"));
+    let bar = format!("{:.2}%", pct);
+    let (left, right) = (fmt(pos), format!("-{}", fmt(dur - pos)));
+    let changed = TICK_LAST.with(|l| {
+        let mut l = l.borrow_mut();
+        let c = (l.0 != bar, l.1 != left, l.2 != right);
+        *l = (bar.clone(), left.clone(), right.clone());
+        c
+    });
+    if !drag && changed.0 {
+        set_style(&el("seek-fill"), "width", &bar);
+        set_style(&el("seek-knob"), "left", &bar);
     }
-    set_text(&el("time-pos"), &fmt(pos));
-    set_text(&el("time-left"), &format!("-{}", fmt(dur - pos)));
+    if changed.1 {
+        set_text(&el("time-pos"), &left);
+    }
+    if changed.2 {
+        set_text(&el("time-left"), &right);
+    }
     sync_lyrics(pos);
 }
 

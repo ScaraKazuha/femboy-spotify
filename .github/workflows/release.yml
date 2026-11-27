@@ -35,7 +35,6 @@ jobs:
           workspaces: |
             . -> target
             ui -> target
-            lite -> target
 
       - uses: actions/setup-node@v4
         with:
@@ -51,47 +50,8 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Femboy Spotify ${{ github.ref_name }}"
           releaseBody: |
-            **Femboy Spotify** (the pink one): download **Femboy.Spotify_*_x64-setup.exe** below and run it ♡
+            Download **Femboy.Spotify_*_x64-setup.exe** below and run it ♡
             It updates itself after that (watch the bell in the top bar). Needs Spotify Premium.
-
-            **Femboy Spotify Lite** (for slower computers): **Femboy.Spotify.Lite_*_x64-setup.exe**.
-            Spotify's own web player in a light window, with a tray icon. Updates itself too.
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
-
-      # The lite version (lite/): its own installer and its own update feed
-      # (latest-lite.json), added to the same release.
-      - name: Build Femboy Spotify Lite
-        working-directory: lite
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npx --yes @tauri-apps/cli@2 build --bundles nsis
-
-      - name: Publish Femboy Spotify Lite
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $version = (Get-Content lite/tauri.conf.json -Raw | ConvertFrom-Json).version
-          $installer = @(Get-ChildItem "lite/target/release/bundle/nsis/*-setup.exe")
-          if ($installer.Count -ne 1) { throw 'Expected exactly one lite installer.' }
-          $signature = (Get-Content -Raw "$($installer[0].FullName).sig").Trim()
-          # GitHub turns spaces in asset names into dots; use that name from the start
-          $name = "Femboy.Spotify.Lite_${version}_x64-setup.exe"
-          New-Item -ItemType Directory -Force lite-release | Out-Null
-          Copy-Item -LiteralPath $installer[0].FullName -Destination "lite-release/$name"
-          $feed = [ordered]@{
-            version   = $version
-            notes     = "See https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:GITHUB_REF_NAME"
-            pub_date  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-            platforms = [ordered]@{
-              'windows-x86_64' = [ordered]@{
-                signature = $signature
-                url       = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/$name"
-              }
-            }
-          }
-          [IO.File]::WriteAllText("$PWD/lite-release/latest-lite.json", ($feed | ConvertTo-Json -Depth 5))
-          gh release upload $env:GITHUB_REF_NAME (Get-ChildItem lite-release | ForEach-Object { $_.FullName }) --clobber

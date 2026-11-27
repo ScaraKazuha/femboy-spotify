@@ -4,6 +4,3 @@
 /ui/target
 /.claude
 /run-debug.cmd
-/lite/target
-/run-lite.cmd
-/lite/gen

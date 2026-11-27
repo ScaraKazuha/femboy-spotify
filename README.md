@@ -9,7 +9,7 @@ A cute, pastel-pink Spotify client written in Rust. ✧
 ## Features
 
 - **built-in player**: music plays right in the app, no official Spotify app needed
-  (sign in to the player once when the app asks)
+  (one sign-in for everything)
 - also a **Spotify Connect remote**: play on your phone, speaker or any device with the
   Spotify app (switch devices from the devices button)
 - home screen with a big custom banner, shortcut tiles, and Spotify's own mixes
@@ -20,6 +20,9 @@ A cute, pastel-pink Spotify client written in Rust. ✧
 - queue, shuffle, repeat (all / one), seek, volume, add to liked songs
 - custom banner: click ✎ on the banner (or the cat in the sidebar) to set your own picture and title
 - frameless pastel window, keyboard shortcuts
+- light on your computer: the cute animations run at 15-30 frames a second instead of the
+  screen's refresh rate (idle CPU went from ~60 % of a core to under 10 %), and the hidden
+  player runs in its own low-memory WebView without the graphics card (~860 MB with music playing)
 - light and dark theme (or follow Windows): the moon / sun button in the top bar
 - bonus: a terminal version (`femboy-spotify-tui`) for terminal lovers
 
@@ -35,17 +38,6 @@ A cute, pastel-pink Spotify client written in Rust. ✧
 **Windows:** download **Femboy.Spotify_x.y.z_x64-setup.exe** from the
 [latest release](https://github.com/ScaraKazuha/femboy-spotify/releases/latest) and run it.
 The app updates itself after that (watch the bell in the top bar).
-
-### Femboy Spotify Lite (for slower computers)
-
-**Femboy.Spotify.Lite_x.y.z_x64-setup.exe** in the same
-[latest release](https://github.com/ScaraKazuha/femboy-spotify/releases/latest): Spotify's own
-web player (open.spotify.com, its menus exactly as they are) in a small Rust + Tauri window,
-like [Femboy YouTube Music](https://github.com/ScaraKazuha/femboy-youtube-music). A splash while
-it loads, a tray icon (closing the window keeps the music playing, **Quit** in the tray menu stops it),
-one window only, and it updates itself. It draws without the graphics card, so it needs about
-half the memory of the main app (~560 MB with music playing, against ~900). It signs in on
-Spotify's page and keeps its own sign-in. Source: [`lite/`](lite) (`cargo tauri build` in that folder).
 
 From source:
 
@@ -112,8 +104,6 @@ The app's side lives in `src/`: `auth.rs` (login), `api.rs` (Spotify's internal 
 Милый пастельно-розовый клиент Spotify на Rust: обложки, тексты песен, очередь, свой баннер.
 Нужен Spotify Premium. Скачайте установщик из релизов (или соберите: `cargo tauri build`). При первом запуске нажмите
 «sign in with Spotify», внутри приложения откроется вход в Spotify. Интерфейс тоже на Rust (WebAssembly).
-Для слабых ПК есть **Femboy Spotify Lite**: сам веб-плеер Spotify в лёгком окне на Rust + Tauri
-(значок в трее, автообновление), занимает примерно вдвое меньше памяти. Установщик в том же релизе.
 
 ## Disclaimer
 

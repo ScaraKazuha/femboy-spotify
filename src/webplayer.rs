@@ -1,9 +1,9 @@
-//! The built-in player, shared by both desktop versions.
+//! The built-in player: its settings and the scripts it runs.
 //!
-//! Spotify refuses audio keys to librespot, so the apps carry Spotify's own web player
+//! Spotify refuses audio keys to librespot, so the app carries Spotify's own web player
 //! in a WebView2 nobody sees. WebView2 has Edge's DRM, so it plays fine, and it shows
 //! up as a Spotify Connect device ("Web Player (Microsoft Edge)") that `remote.rs`
-//! drives like any other. The page gets no access to the apps' commands.
+//! drives like any other. The page gets no access to the app's commands.
 
 /// Where the player lives.
 pub const HOME: &str = "https://open.spotify.com/";
@@ -11,21 +11,75 @@ pub const HOME: &str = "https://open.spotify.com/";
 /// Spotify's sign-in, continuing to the player.
 pub const LOGIN: &str = "https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2F";
 
-/// Every webview of an app shares one WebView2 environment, and both versions share
-/// the same data folder (one sign-in for both), so they all must use exactly these
-/// arguments (`tauri.conf.json` repeats them for the main window). The first part is
-/// Tauri's default; the rest lets the player start music without a click and keeps it
-/// from being throttled while nobody sees it.
+/// The main window's WebView2 arguments (`tauri.conf.json` has them; every webview in
+/// one data folder must use the same). Tauri's default, plus: music may start without a
+/// click, and nothing gets throttled while the window is in the background.
 pub const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
      --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling \
      --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
 
-/// The WebView2 data folder (cookies: the player's Spotify sign-in), the one Tauri
-/// uses for the main version.
+/// The app's WebView2 data folder (Tauri's, for the main window).
 pub fn data_dir() -> std::path::PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("dev.scarakazuha.femboyspotify")
+}
+
+/// The player runs in a WebView2 environment of its own, tuned for a page nobody ever
+/// sees: it draws without the graphics card (sharing the window's GPU process cost a
+/// few hundred MB; the window keeps the GPU for its animations) and in Chromium's
+/// low-memory mode for weak devices (smaller caches and memory budget). Measured with
+/// a song playing: 1008 MB for the whole app before, 864 MB after.
+pub const PLAYER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+     --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling \
+     --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-gpu \
+     --enable-low-end-device-mode";
+
+/// The player's own data folder (an environment with other arguments needs one).
+pub fn player_data_dir() -> std::path::PathBuf {
+    data_dir().join("player")
+}
+
+/// First start with the player's own folder: takes its Spotify sign-in (cookies)
+/// from the shared folder earlier versions used. Windows ties their encryption to
+/// the user, not the folder, so they keep working; nothing to sign in to again.
+/// Must run before any webview starts (they lock the cookies file).
+pub fn take_sign_in() {
+    let done = player_data_dir().join("sign-in-taken");
+    if done.exists() {
+        return;
+    }
+    let to = player_data_dir().join("EBWebView");
+    let existed = to.exists();
+    let _ = std::fs::create_dir_all(player_data_dir());
+    let from = data_dir().join("EBWebView");
+    let files = ["Local State", "Default/Network/Cookies", "Default/Network/Cookies-journal"];
+    if !from.join(files[1]).exists() {
+        let _ = std::fs::write(&done, "1"); // nothing to take (a new install)
+        return;
+    }
+    let mut ok = true;
+    for f in files {
+        let src = from.join(f);
+        if !src.exists() {
+            continue;
+        }
+        let dst = to.join(f);
+        if let Some(dir) = dst.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Err(e) = std::fs::copy(&src, &dst) {
+            crate::auth::log(&format!("player: couldn't take the sign-in ({f}): {e}"));
+            ok = false;
+        }
+    }
+    if ok {
+        let _ = std::fs::write(&done, "1");
+        crate::auth::log("player: took the Spotify sign-in into its own folder");
+    } else if !existed {
+        // half a profile is worse than none: start clean (tried again next start)
+        let _ = std::fs::remove_dir_all(&to);
+    }
 }
 
 /// Sites the player may visit: Spotify and its "continue with" sign-in providers.
@@ -57,6 +111,12 @@ pub const CALM_SCRIPT: &str = r#"
     (document.head || document.documentElement).append(s);
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add();
+  // Spotify's service worker only caches the web page, in a process of its own
+  const sw = navigator.serviceWorker;
+  if (sw) {
+    sw.register = () => Promise.reject(new Error("no service worker in femboy spotify"));
+    sw.getRegistrations().then((list) => list.forEach((r) => r.unregister())).catch(() => {});
+  }
 })();
 "#;
 

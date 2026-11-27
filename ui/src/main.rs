@@ -8,6 +8,7 @@ mod demo;
 mod events;
 mod icons;
 mod menu;
+mod motion;
 mod state;
 mod theme;
 mod tips;
@@ -19,19 +20,6 @@ use wasm_bindgen::{JsCast, closure::Closure};
 
 use crate::state::st;
 use crate::util::*;
-
-/// One ear twitch (a short CSS animation; see `.ear.twitch` in style.css).
-fn twitch(group: &'static str) {
-    let ears = doc_query_all(&format!("{group} .ear"));
-    for e in &ears {
-        add_class(e, "twitch");
-    }
-    later(1200, move || {
-        for e in &ears {
-            remove_class(e, "twitch");
-        }
-    });
-}
 
 fn main() {
     console_error_panic_hook::set_once();
@@ -56,13 +44,7 @@ fn main() {
     app::render();
     app::render_now();
     gloo_timers::callback::Interval::new(250, app::tick).forget();
-    // the panels' ears twitch every 7 s, one panel after another
-    gloo_timers::callback::Interval::new(7000, || {
-        for (group, delay) in [(".ears-main", 0), (".ears-right", 2100), (".ears-side", 4300)] {
-            later(delay, move || twitch(group));
-        }
-    })
-    .forget();
+    motion::start();
     spawn(app::check_for_update());
     gloo_timers::callback::Interval::new(6 * 60 * 60 * 1000, || spawn(app::check_for_update())).forget();
     spawn(app::connect_saved());

@@ -11,7 +11,7 @@ use femboy_spotify::{
     api::{AlbumPage, Api, ArtistPage, Card, LyricLine, Me, Playlist, SearchResults, Track, encode_query},
     auth::{self, Login},
     remote::{Remote, RemoteState},
-    webplayer::{BROWSER_ARGS, CALM_SCRIPT as PLAYER_CALM, HOME as PLAYER_HOME, LOGIN as PLAYER_LOGIN},
+    webplayer::{CALM_SCRIPT as PLAYER_CALM, HOME as PLAYER_HOME, LOGIN as PLAYER_LOGIN},
 };
 use librespot::core::session::Session;
 use tauri::{
@@ -579,7 +579,9 @@ fn player_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .center()
         .visible(false)
         .skip_taskbar(true)
-        .additional_browser_args(BROWSER_ARGS)
+        // its own WebView2 environment, drawing without the graphics card (see webplayer.rs)
+        .data_directory(femboy_spotify::webplayer::player_data_dir())
+        .additional_browser_args(femboy_spotify::webplayer::PLAYER_ARGS)
         .initialization_script(HOME_SCRAPER)
         .initialization_script(PLAYER_CALM)
         .on_document_title_changed(|w, title| home_piece(w.app_handle(), &title))
@@ -815,6 +817,8 @@ fn main() {
     auth::init_runtime();
     auth::init_file_log();
     log_line(concat!("femboy spotify ", env!("CARGO_PKG_VERSION"), " started"));
+    // before any webview starts: they lock the cookies file
+    femboy_spotify::webplayer::take_sign_in();
     tauri::Builder::default()
         // a second launch (autostart + a click, say) just brings this window up
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
