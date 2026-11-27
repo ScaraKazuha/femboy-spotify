@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Femboy Spotify Lite",
+  "version": "0.5.0",
+  "identifier": "dev.scarakazuha.femboyspotify.lite",
+  "build": { "frontendDist": "web" },
+  "app": {
+    "windows": [],
+    "withGlobalTauri": false,
+    "security": {
+      "capabilities": [],
+      "csp": "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdFNEFFMEUwQTgwQTA0Q0UKUldUT0JBcW80T0JLZnZ1T1pYemNKdTF1eE91Tnd6N2ZySDBvTVRJWG9vdHcxaWFlS25PMVVCSFMK",
+      "endpoints": ["https://github.com/ScaraKazuha/femboy-spotify/releases/latest/download/latest-lite.json"],
+      "windows": { "installMode": "passive" }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["nsis"],
+    "category": "Music",
+    "shortDescription": "Spotify's web player in a light desktop window",
+    "longDescription": "Femboy Spotify Lite: an unofficial Windows wrapper for open.spotify.com, for slower computers. Not affiliated with, endorsed by, or sponsored by Spotify.",
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "displayLanguageSelector": false,
+        "languages": ["English"]
+      }
+    }
+  }
+}

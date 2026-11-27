@@ -11,6 +11,7 @@ use femboy_spotify::{
     api::{AlbumPage, Api, ArtistPage, Card, LyricLine, Me, Playlist, SearchResults, Track, encode_query},
     auth::{self, Login},
     remote::{Remote, RemoteState},
+    webplayer::{BROWSER_ARGS, CALM_SCRIPT as PLAYER_CALM, HOME as PLAYER_HOME, LOGIN as PLAYER_LOGIN},
 };
 use librespot::core::session::Session;
 use tauri::{
@@ -448,36 +449,6 @@ async fn transfer(state: State<'_, AppState>, device: String) -> CmdResult<()> {
 // the "main" window.
 
 const PLAYER: &str = "player";
-const PLAYER_HOME: &str = "https://open.spotify.com/";
-const PLAYER_LOGIN: &str =
-    "https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2F";
-/// Every webview of the app shares one WebView2 environment, so `tauri.conf.json`
-/// gives the main window exactly the same arguments. The first part is Tauri's
-/// default; the rest lets the hidden player start music without a click and keeps
-/// it from being throttled while hidden.
-const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
-     --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling \
-     --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
-
-/// Runs in the player window. Nobody sees Spotify's web player there, yet it would
-/// draw ~200 animations at the screen's refresh rate, which costs a few hundred MB
-/// in WebView2's GPU process. On open.spotify.com every animation and transition is
-/// cut to 1 ms (so the ones the page waits for still finish and fire their events).
-/// Spotify's sign-in pages are on other hosts and keep theirs.
-const PLAYER_CALM: &str = r#"
-(() => {
-  if (location.hostname !== 'open.spotify.com') return;
-  const add = () => {
-    if (document.getElementById('femboy-calm')) return;
-    const s = document.createElement('style');
-    s.id = 'femboy-calm';
-    s.textContent = '*, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0s !important;'
-      + ' animation-iteration-count: 1 !important; transition-duration: 1ms !important; transition-delay: 0s !important; }';
-    (document.head || document.documentElement).append(s);
-  };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add();
-})();
-"#;
 
 /// Runs in the player window. On Spotify's home page it reads the playlist shelves
 /// ("Made For you", "Your top mixes", ...) from the page and hands them to the app
@@ -594,13 +565,7 @@ fn spotify_home(state: State<'_, AppState>) -> Option<Vec<Shelf>> {
 
 /// Sites the sign-in window may visit (Spotify and its "continue with" providers).
 fn player_may_visit(url: &tauri::Url) -> bool {
-    if url.as_str() == "about:blank" {
-        return true; // used to unload the player on exit
-    }
-    let host = url.host_str().unwrap_or_default();
-    ["spotify.com", "google.com", "apple.com", "facebook.com", "gstatic.com"]
-        .iter()
-        .any(|d| host == *d || host.ends_with(&format!(".{d}")))
+    femboy_spotify::webplayer::may_visit(url.as_str())
 }
 
 fn player_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
@@ -667,16 +632,7 @@ async fn player_status(app: AppHandle) -> CmdResult<bool> {
 #[tauri::command]
 fn player_volume(app: AppHandle, volume: u16) -> CmdResult<()> {
     let w = app.get_webview_window(PLAYER).ok_or("no built-in player")?;
-    let v = f64::from(volume.min(100)) / 100.0;
-    // the slider snaps to 10 % steps unless its step is relaxed while we set it
-    w.eval(format!(
-        "(() => {{ const i = [...document.querySelectorAll('input[type=range]')].find((x) => x.max === '1'); \
-         if (!i) return; const step = i.getAttribute('step'); i.setAttribute('step', 'any'); \
-         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '{v}'); \
-         i.dispatchEvent(new Event('input', {{ bubbles: true }})); i.dispatchEvent(new Event('change', {{ bubbles: true }})); \
-         if (step) i.setAttribute('step', step); }})()"
-    ))
-    .map_err(err)
+    w.eval(femboy_spotify::webplayer::volume_script(volume)).map_err(err)
 }
 
 /// Shows the player window on Spotify's sign-in page; it hides itself once signed in.

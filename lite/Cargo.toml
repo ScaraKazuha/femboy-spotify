@@ -1,0 +1,28 @@
+[package]
+name = "femboy-spotify-lite"
+version = "0.5.0"
+description = "Femboy Spotify Lite: Spotify's own web player in a light desktop window"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Its own project (built on its own, see README "Lite version"), not part of the main app.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2.7.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.7", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+serde_json = "1"
+webbrowser = "1"
+url = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

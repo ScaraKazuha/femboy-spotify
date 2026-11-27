@@ -1,6 +1,6 @@
 [package]
 name = "femboy-spotify"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2024"
 description = "A cute pink Spotify client written in Rust"
 license = "MIT"
