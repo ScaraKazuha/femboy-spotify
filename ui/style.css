@@ -64,7 +64,8 @@ img { display: block; }
     "top top top"
     "side main right"
     "player player player";
-  gap: 16px 10px;
+  /* 24px under the top bar leaves room for the panels' ears below the search pill */
+  gap: 24px 10px;
   padding: 0 12px;
 }
 
@@ -286,16 +287,26 @@ img { display: block; }
   background: #f3e3f3 center / 100% 100% no-repeat;
   container-type: inline-size;
 }
+/* A real, perfectly round play button drawn over the hand-painted one in the
+   artwork (slightly bigger, so the painted one is fully covered). Its position
+   is in % of the stretched picture, so it stays on the painted spot at any size. */
 .art-play {
   position: absolute;
   left: 14.2%;
   top: 88.3%;
-  width: 5.6cqw;
-  height: 5.6cqw;
+  width: 6.4cqw;
+  height: 6.4cqw;
   transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
   border-radius: 50%;
+  background: linear-gradient(180deg, #ffadd0, #ff88b8);
+  border: max(2px, .25cqw) solid var(--plum);
+  color: var(--plum);
+  box-shadow: 0 0 0 max(2px, .2cqw) #fff6fb;
   transition: box-shadow .15s, transform .15s;
 }
+.art-play .ico { width: 52%; height: 52%; }
 .art-play:hover { box-shadow: 0 0 0 4px rgba(255, 255, 255, .85), 0 0 18px rgba(255, 127, 178, .7); transform: translate(-50%, -50%) scale(1.06); }
 .art-play:active { transform: translate(-50%, -50%) scale(.95); }
 
@@ -364,7 +375,7 @@ img { display: block; }
   color: var(--plum);
   transition: transform .15s;
 }
-.hero-play .ico { width: 34px; height: 34px; margin-left: 4px; }
+.hero-play .ico { width: 34px; height: 34px; }
 .hero-play:hover { transform: scale(1.07); }
 .hero-play::before, .hero-play::after {
   content: "";
@@ -630,7 +641,6 @@ img { display: block; }
   transition: transform .12s;
 }
 .play-btn .ico { width: 26px; height: 26px; }
-.play-btn[data-icon="play"] .ico { margin-left: 3px; }
 .play-btn:hover { transform: scale(1.06); }
 .play-btn:active { transform: scale(.94); }
 
@@ -896,7 +906,9 @@ img { display: block; }
 /* ───────── cat ears ───────── */
 
 :root {
-  --ear: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 46 36'%3E%3Cpath d='M2 36 11 7Q14-1 20 5L44 36Z' fill='%23f9eff8'/%3E%3Cpath d='M2 35 11 7Q14-1 20 5L44 35' fill='none' stroke='%23c58ebd' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M11.5 34 15.5 15Q17 11 20 14L33 34Z' fill='%23ffc2da'/%3E%3C/svg%3E");
+  /* ears match the border they sit on: panels use --line, pop-up cards --line-strong */
+  --ear: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 46 36'%3E%3Cpath d='M2 36 11 7Q14-1 20 5L44 36Z' fill='%23faf2fa'/%3E%3Cpath d='M2 36 11 7Q14-1 20 5L44 36' fill='none' stroke='%23ddb3d8' stroke-width='2' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M11.5 34 15.5 15Q17 11 20 14L33 34Z' fill='%23ffc2da'/%3E%3C/svg%3E");
+  --ear-card: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 46 36'%3E%3Cpath d='M2 36 11 7Q14-1 20 5L44 36Z' fill='%23fbf2f8'/%3E%3Cpath d='M2 36 11 7Q14-1 20 5L44 36' fill='none' stroke='%23c58ebd' stroke-width='2' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M11.5 34 15.5 15Q17 11 20 14L33 34Z' fill='%23ffc2da'/%3E%3C/svg%3E");
 }
 
 .ears {
@@ -912,23 +924,27 @@ img { display: block; }
 .ears-right { grid-column: 3; }
 #app.no-right .ears-right { display: none; }
 
+/* An ear's flat base sits exactly on the panel's 2px top border (its fill hides the
+   border, its outline continues it). Leaning and twitching use skew + squash from the
+   base, never rotation, so the base stays glued to the border. Ears also stay on the
+   straight part of the border, clear of the rounded corners. */
 .ear {
   --w: 44px;
-  --tilt: -12deg;
+  --lean: 4deg;
   position: absolute;
-  top: calc(var(--w) * -0.78 + 3px);
+  top: calc(var(--w) * -36 / 46 + 2px);
   width: var(--w);
-  height: calc(var(--w) * 0.78);
-  background: var(--ear) center / contain no-repeat;
+  height: calc(var(--w) * 36 / 46);
+  background: var(--ear) center bottom / 100% 100% no-repeat;
   transform-origin: 50% 100%;
   animation: ear-twitch 7s ease-in-out infinite;
 }
-.ear.l { left: 9%; transform: rotate(var(--tilt)); }
-.ear.r { right: 9%; transform: scaleX(-1) rotate(var(--tilt)); animation-name: ear-twitch-r; animation-delay: .35s; }
-.ears-side .ear { --w: 26px; }
-.ears-side .ear.l { left: 6px; }
-.ears-side .ear.r { right: 6px; }
-.ears-main .ear { --w: 50px; }
+.ear.l { left: 9%; transform: skewX(var(--lean)); }
+.ear.r { right: 9%; transform: scaleX(-1) skewX(var(--lean)); animation-name: ear-twitch-r; animation-delay: .35s; }
+.ears-side .ear { --w: 20px; }
+.ears-side .ear.l { left: 16px; }
+.ears-side .ear.r { right: 16px; }
+.ears-main .ear { --w: 44px; }
 .ears-main .ear.l { left: 7%; }
 .ears-main .ear.r { right: 7%; }
 .ears-right .ear { animation-delay: 2.1s; }
@@ -937,14 +953,14 @@ img { display: block; }
 .ears-side .ear.r { animation-delay: 4.6s; }
 
 @keyframes ear-twitch {
-  0%, 90%, 100% { transform: rotate(var(--tilt)); }
-  93% { transform: rotate(calc(var(--tilt) - 14deg)); }
-  96% { transform: rotate(calc(var(--tilt) + 4deg)); }
+  0%, 90%, 100% { transform: skewX(var(--lean)); }
+  93% { transform: skewX(calc(var(--lean) + 16deg)) scaleY(.9); }
+  96% { transform: skewX(calc(var(--lean) - 5deg)) scaleY(1.03); }
 }
 @keyframes ear-twitch-r {
-  0%, 90%, 100% { transform: scaleX(-1) rotate(var(--tilt)); }
-  93% { transform: scaleX(-1) rotate(calc(var(--tilt) - 14deg)); }
-  96% { transform: scaleX(-1) rotate(calc(var(--tilt) + 4deg)); }
+  0%, 90%, 100% { transform: scaleX(-1) skewX(var(--lean)); }
+  93% { transform: scaleX(-1) skewX(calc(var(--lean) + 16deg)) scaleY(.9); }
+  96% { transform: scaleX(-1) skewX(calc(var(--lean) - 5deg)) scaleY(1.03); }
 }
 
 /* the pop-up cards get ears too */
@@ -952,14 +968,16 @@ img { display: block; }
 .card::before, .card::after {
   content: "";
   position: absolute;
-  top: -38px;
+  /* 52px wide: 52 * 36 / 46 = 40.7px tall; base on the card's 2px border */
+  top: calc(-52px * 36 / 46);
   width: 52px;
-  height: 41px;
-  background: var(--ear) center / contain no-repeat;
+  height: calc(52px * 36 / 46);
+  background: var(--ear-card) center bottom / 100% 100% no-repeat;
+  transform-origin: 50% 100%;
   pointer-events: none;
 }
-.card::before { left: 44px; transform: rotate(-12deg); }
-.card::after { right: 44px; transform: scaleX(-1) rotate(-12deg); }
+.card::before { left: 44px; transform: skewX(4deg); }
+.card::after { right: 44px; transform: scaleX(-1) skewX(4deg); }
 
 @media (prefers-reduced-motion: reduce) {
   .ear { animation: none; }

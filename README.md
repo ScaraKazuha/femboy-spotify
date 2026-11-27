@@ -12,7 +12,9 @@ A cute, pastel-pink Spotify client written in Rust. ✧
   (sign in to the player once when the app asks)
 - also a **Spotify Connect remote**: play on your phone, speaker or any device with the
   Spotify app (switch devices from the devices button)
-- home screen with a big custom banner, shortcut tiles, and "made for you" cards
+- home screen with a big custom banner, shortcut tiles, and Spotify's own mixes
+  (Daily Mixes, Release Radar, your top mixes...)
+- **DJ X**: press the headphones buddy to start Spotify DJ, press again to switch it up
 - liked songs, playlists, recently played, search
 - now-playing panel with big cover art and **time-synced lyrics** (click a line to jump to it)
 - queue, shuffle, repeat (all / one), seek, volume, add to liked songs

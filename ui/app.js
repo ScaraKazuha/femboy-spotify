@@ -163,7 +163,7 @@ function heroHtml() {
   if (!custom && !store.get('bannerTitle', '')) {
     return `
     <section class="hero art-hero" style="background-image:url('art/boykisser-banner.jpg')">
-      <button class="art-play" id="hero-play" title="play ${esc(featuredPlaylist()?.name || 'Liked Songs')}"></button>
+      <button class="art-play" id="hero-play" title="play ${esc(featuredPlaylist()?.name || 'Liked Songs')}">${icon('play')}</button>
       <button class="icon-btn hero-edit" id="hero-edit" title="customize banner">${icon('pen')}</button>
     </section>`;
   }
@@ -217,16 +217,39 @@ function homeHtml() {
   ]
     .concat(S.playlists.slice(0, 6).map((p) => `<button class="tile" data-playlist="${esc(p.id)}"><img src="${img(p.image)}" alt=""><span>${esc(p.name)}</span></button>`))
     .join('');
-  const cards = (S.filter === 'playlists' ? S.playlists : S.playlists.slice(7, 19).concat(S.playlists.length <= 7 ? S.playlists : []))
+  const cards = (S.filter === 'playlists' ? S.playlists : S.playlists.slice(6))
     .map(cardHtml).join('');
+  const head = (title) => `<div class="section-head"><h2>${esc(title)}</h2><div class="line">${icon('heart')}</div></div>`;
+  // Spotify's own shelves: Daily Mixes, Release Radar, top mixes... (from the built-in player)
+  const shelves = S.filter === 'all'
+    ? (S.home || []).map((s) => `${head(s.title)}<div class="cards shelf">${s.items.map(homeCardHtml).join('')}</div>`).join('')
+    : '';
   return `
     ${heroHtml()}
     <div class="chips">${chips}</div>
     ${S.filter === 'all' ? `<div class="tiles">${tiles}</div>` : ''}
-    ${cards ? `<div class="section-head"><h2>${S.filter === 'playlists' ? 'Your playlists' : 'Made for you'}</h2><div class="line">${icon('heart')}</div></div>
-    <div class="cards">${cards}</div>` : ''}
+    ${shelves}
+    ${cards ? `${head('Your playlists')}<div class="cards">${cards}</div>` : ''}
     ${!S.playlists.length ? `<div class="empty"><div class="big">♡</div>loading your library...</div>` : ''}`;
 }
+
+function homeCardHtml(p) {
+  const dj = p.id === DJ_URI.split(':').pop();
+  return `<button class="card-item" ${dj ? 'data-open="dj"' : `data-playlist="${esc(p.id)}"`}>
+      <img class="cov" src="${p.image ? img(p.image) : PLACEHOLDER}" alt="" loading="lazy">
+      <div class="t">${esc(p.name)}</div>
+      <div class="st">${esc(p.sub || 'Spotify')}</div>
+    </button>`;
+}
+
+// Spotify's home shelves arrive from the built-in player a little after start
+function setHome(shelves) {
+  S.home = shelves || [];
+  S.homeItems = new Map();
+  S.home.forEach((s) => s.items.forEach((it) => S.homeItems.set(it.id, { id: it.id, name: it.name, owner: 'Spotify', image: it.image, total: 0 })));
+  if (S.view.name === 'home') render();
+}
+listen('home', setHome);
 
 function cardHtml(p) {
   return `<button class="card-item" data-playlist="${esc(p.id)}">
@@ -401,6 +424,20 @@ function pickDevice() {
   return d ? d.id : null;
 }
 
+// pickDevice(), but first makes sure our own player is in the device list: Spotify
+// only pushes the list when playback changes, so right after start it can be missing.
+async function chooseDevice() {
+  for (let i = 0; S.playerReady && !S.devices.some(isBuiltin) && i < 4; i++) {
+    if (i) await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const st = await invoke('refresh_devices');
+      S.devices = st.devices || [];
+      S.activeDevice = st.active_device;
+    } catch { break; }
+  }
+  return pickDevice();
+}
+
 function handleRemoteError(e) {
   if (String(e).includes(NO_DEVICE)) { showNoDevice(); return; }
   toast(`oopsie: ${e}`);
@@ -425,7 +462,7 @@ async function playIndex(i) {
   setPos(0);
   setNow(t);
   try {
-    await invoke('play', { context: S.ctx, uris: S.queue.map((x) => x.uri), index: i, device: pickDevice() });
+    await invoke('play', { context: S.ctx, uris: S.queue.map((x) => x.uri), index: i, device: await chooseDevice() });
   } catch (e) {
     S.playing = false;
     S.buffering = false;
@@ -533,7 +570,7 @@ async function playDJ() {
   setNow({ uri: 'dj:start', id: '', name: 'DJ X is warming up ♪', artists: 'Spotify DJ', album: '', duration_ms: 0, image: DJ_ART, image_large: DJ_ART });
   toast('DJ X is on the way ♪');
   try {
-    await invoke('play_dj', { device: pickDevice() });
+    await invoke('play_dj', { device: await chooseDevice() });
   } catch (e) {
     S.playing = false;
     S.djOn = false;
@@ -826,7 +863,7 @@ main.addEventListener('click', (e) => {
 });
 
 function openPlaylistById(id) {
-  const p = S.playlists.find((x) => x.id === id);
+  const p = S.playlists.find((x) => x.id === id) || S.homeItems?.get(id);
   if (p) openPlaylist(p);
 }
 
@@ -943,11 +980,19 @@ $('btn-lyrics').onclick = () => (S.view.name === 'lyrics' ? goBack() : go({ name
 $('lyrics-open').onclick = () => go({ name: 'lyrics' });
 $('btn-queue').onclick = () => (S.view.name === 'queue' ? goBack() : go({ name: 'queue' }));
 $('btn-devices').onclick = () => toggleDevices();
-$('btn-panel').onclick = () => {
+// the now-playing side panel (Spotify's "Now playing view" button)
+$('btn-np').onclick = () => {
   const hidden = $('app').classList.toggle('no-right');
-  $('btn-panel').classList.toggle('active', !hidden);
+  $('btn-np').classList.toggle('active', !hidden);
 };
-$('btn-mini').onclick = () => $('btn-panel').click();
+// the headphones buddy is the DJ X button: start DJ, or let the DJ switch it up
+$('btn-panel').onclick = () => {
+  if (!S.djOn) return playDJ();
+  if (!S.playing) return togglePlay();
+  toast('DJ X is switching it up ♪');
+  control('skip_next');
+};
+$('btn-mini').onclick = () => $('btn-np').click();
 $('btn-full').onclick = async () => {
   if (!appWindow) return toast('fullscreen works in the app ♡');
   await appWindow.setFullscreen(!(await appWindow.isFullscreen()));
@@ -1079,6 +1124,7 @@ async function loadLibrary() {
   if (S.view.name === 'home') render();
   invoke('liked').then((l) => { S.liked = l; cacheTracks(l); l.forEach((t) => S.saved.add(t.id)); }).catch(() => {});
   invoke('remote_state').then(applyRemote).catch(() => {});
+  invoke('spotify_home').then((h) => h && setHome(h)).catch(() => {});
 }
 
 listen('remote', applyRemote);
@@ -1132,7 +1178,11 @@ async function demoInvoke(cmd, args = {}) {
     case 'search': return DEMO_TRACKS.filter((t) => (t.name + t.artists).toLowerCase().includes(args.q.toLowerCase()));
     case 'lyrics': return [{ start_ms: 0, words: 'this is a demo, no real lyrics here' }, { start_ms: 4000, words: 'log in with Spotify to hear the music' }, { start_ms: 8000, words: 'pink pink pink ♡' }, { start_ms: 12000, words: 'la la la~' }];
     // a pretend Spotify Connect device
-    case 'remote_state': return demoState();
+    case 'remote_state': case 'refresh_devices': return demoState();
+    case 'spotify_home': return [
+      { title: 'Made For cutie', items: ['Daily Mix 1', 'Daily Mix 2', 'Release Radar', 'Discover Weekly'].map((n, i) => ({ id: 'mix' + i, name: n, sub: 'cute songs, mixed for you', image: '' })) },
+      { title: 'Your top mixes', items: ['Hyperpop Mix', 'Pastel Mix', 'Night Mix'].map((n, i) => ({ id: 'top' + i, name: n, sub: 'Spotify', image: '' })) },
+    ];
     case 'check_update': return location.search.includes('update') ? { current: '0.3.0', version: '0.4.0', notes: '- demo update notes\n- even more pink ♡' } : null;
     case 'play_dj': {
       demoRemote.active = args.device || demoRemote.active || demoDevices()[0].id;

@@ -29,6 +29,26 @@ struct Core {
 #[derive(Default)]
 struct AppState {
     core: RwLock<Option<Arc<Core>>>,
+    /// Spotify's own home shelves (Daily Mixes, Release Radar...), read from the built-in player.
+    home: std::sync::Mutex<Option<Vec<Shelf>>>,
+    /// pieces of the shelves message while it arrives through the page title
+    home_parts: std::sync::Mutex<Vec<Option<String>>>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct Shelf {
+    title: String,
+    items: Vec<ShelfItem>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct ShelfItem {
+    id: String,
+    name: String,
+    #[serde(default)]
+    sub: String,
+    #[serde(default)]
+    image: String,
 }
 
 type CmdResult<T> = Result<T, String>;
@@ -155,6 +175,12 @@ async fn remote_state(state: State<'_, AppState>) -> CmdResult<RemoteState> {
     Ok(state.core().await?.remote.state())
 }
 
+/// Fetches the device list from Spotify now instead of waiting for a push.
+#[tauri::command]
+async fn refresh_devices(state: State<'_, AppState>) -> CmdResult<RemoteState> {
+    state.core().await?.remote.refresh().await.map_err(err)
+}
+
 /// `context`: "liked", "search:<query>", a spotify: URI, or null to send `uris` as the queue.
 #[tauri::command]
 async fn play(
@@ -249,6 +275,119 @@ const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreen
      --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling \
      --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
 
+/// Runs in the player window. On Spotify's home page it reads the playlist shelves
+/// ("Made For you", "Your top mixes", ...) from the page and hands them to the app
+/// through the page title in small pieces ("femboy-home:<i>/<n>:<piece>"), so the
+/// web page never needs access to the app's commands.
+const HOME_SCRAPER: &str = r#"
+(() => {
+  if (location.hostname !== 'open.spotify.com' || window.__femboyHome) return;
+  window.__femboyHome = true;
+  const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
+  const scrape = () => {
+    const shelves = [];
+    for (const s of document.querySelectorAll('section[data-testid=component-shelf]')) {
+      const h2 = clean(s.querySelector('h2') && s.querySelector('h2').textContent);
+      const aria = clean(s.getAttribute('aria-label'));
+      const title = aria && aria.length <= h2.length + 12 ? aria : h2;
+      const items = [];
+      for (const c of s.querySelectorAll('[data-encore-id=card]')) {
+        const a = c.querySelector('a[href^="/playlist/"]');
+        if (!a) continue;
+        const t = c.querySelector('[data-encore-id=cardTitle]');
+        const st = c.querySelector('[data-encore-id=cardSubtitle]');
+        const img = c.querySelector('img');
+        items.push({ id: a.getAttribute('href').split('/')[2] || '', name: clean(t && t.textContent), sub: clean(st && st.textContent), image: (img && img.src) || '' });
+      }
+      if (title && items.length) shelves.push({ title, items: items.slice(0, 16) });
+    }
+    return shelves.slice(0, 10);
+  };
+  let last = '', sent = '';
+  const send = (json) => {
+    const size = 2500, n = Math.ceil(json.length / size), orig = document.title;
+    for (let i = 0; i < n; i++) setTimeout(() => { document.title = `femboy-home:${i}/${n}:` + json.slice(i * size, (i + 1) * size); }, i * 150);
+    setTimeout(() => { if (document.title.startsWith('femboy-home:')) document.title = orig; }, n * 150 + 50);
+  };
+  const tick = () => {
+    const shelves = scrape();
+    const json = JSON.stringify(shelves);
+    // send once the page has settled (same result twice in a row)
+    if (shelves.length && json === last && json !== sent) { sent = json; send(json); }
+    last = json;
+  };
+  setInterval(tick, 2500);
+})();
+"#;
+
+/// Takes one piece of the shelves message; stores and announces the shelves once complete.
+fn home_piece(app: &AppHandle, title: &str) {
+    let Some(rest) = title.strip_prefix("femboy-home:") else { return };
+    let Some((pos, piece)) = rest.split_once(':') else { return };
+    let Some((i, n)) = pos.split_once('/') else { return };
+    let (Ok(i), Ok(n)) = (i.parse::<usize>(), n.parse::<usize>()) else { return };
+    if n == 0 || n > 64 || i >= n {
+        return;
+    }
+    let state = app.state::<AppState>();
+    let json = {
+        let mut parts = state.home_parts.lock().unwrap();
+        if parts.len() != n {
+            *parts = vec![None; n];
+        }
+        parts[i] = Some(piece.to_string());
+        if parts.iter().any(Option::is_none) {
+            return;
+        }
+        std::mem::take(&mut *parts).into_iter().flatten().collect::<String>()
+    };
+    let Ok(shelves) = serde_json::from_str::<Vec<Shelf>>(&json) else {
+        log_line("home: could not read Spotify's shelves");
+        return;
+    };
+    let shelves = clean_shelves(shelves);
+    log_line(&format!("home: {} shelves from Spotify", shelves.len()));
+    *state.home.lock().unwrap() = Some(shelves.clone());
+    let _ = app.emit("home", shelves);
+}
+
+/// The page is a web page, so only keep well-formed playlist ids and Spotify CDN images.
+fn clean_shelves(shelves: Vec<Shelf>) -> Vec<Shelf> {
+    let cut = |s: String, n: usize| s.chars().take(n).collect::<String>();
+    let spotify_image = |u: &str| {
+        tauri::Url::parse(u).is_ok_and(|u| {
+            u.scheme() == "https"
+                && u.host_str().is_some_and(|h| h.ends_with(".spotifycdn.com") || h.ends_with(".scdn.co"))
+        })
+    };
+    shelves
+        .into_iter()
+        .take(10)
+        .map(|s| Shelf {
+            title: cut(s.title, 80),
+            items: s
+                .items
+                .into_iter()
+                .filter(|it| it.id.len() == 22 && it.id.chars().all(|c| c.is_ascii_alphanumeric()))
+                .take(16)
+                .map(|it| ShelfItem {
+                    image: if spotify_image(&it.image) { it.image } else { String::new() },
+                    id: it.id,
+                    name: cut(it.name, 100),
+                    sub: cut(it.sub, 140),
+                })
+                .collect(),
+        })
+        .filter(|s| !s.title.is_empty() && !s.items.is_empty())
+        .collect()
+}
+
+/// Spotify's home shelves, if the built-in player has shown them yet.
+#[tauri::command]
+fn spotify_home(state: State<'_, AppState>) -> Option<Vec<Shelf>> {
+    state.home.lock().unwrap().clone()
+}
+
 /// Sites the sign-in window may visit (Spotify and its "continue with" providers).
 fn player_may_visit(url: &tauri::Url) -> bool {
     if url.as_str() == "about:blank" {
@@ -266,11 +405,14 @@ fn player_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     }
     let w = WebviewWindowBuilder::new(app, PLAYER, WebviewUrl::External(PLAYER_HOME.parse().unwrap()))
         .title("Femboy Spotify ♡ sign in to the built-in player")
-        .inner_size(520.0, 760.0)
+        // big while hidden so Spotify's home shows full shelves; sign-in shrinks it
+        .inner_size(1280.0, 900.0)
         .center()
         .visible(false)
         .skip_taskbar(true)
         .additional_browser_args(BROWSER_ARGS)
+        .initialization_script(HOME_SCRAPER)
+        .on_document_title_changed(|w, title| home_piece(w.app_handle(), &title))
         .on_navigation(player_may_visit)
         .on_page_load(|w, p| {
             if p.event() != PageLoadEvent::Finished
@@ -316,6 +458,8 @@ async fn player_login(app: AppHandle) -> CmdResult<()> {
     let w = player_window(&app).map_err(err)?;
     log_line("player: showing sign-in");
     w.navigate(PLAYER_LOGIN.parse().unwrap()).map_err(err)?;
+    w.set_size(tauri::LogicalSize::new(520.0, 760.0)).map_err(err)?;
+    w.center().map_err(err)?;
     w.set_skip_taskbar(false).map_err(err)?;
     w.show().map_err(err)?;
     w.set_focus().map_err(err)
@@ -443,6 +587,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            spotify_home,
             player_status,
             player_login,
             init,
@@ -458,6 +603,7 @@ fn main() {
             save_track,
             lyrics,
             remote_state,
+            refresh_devices,
             play,
             play_dj,
             control,

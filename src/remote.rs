@@ -207,6 +207,17 @@ impl Remote {
         Ok(())
     }
 
+    /// Asks Spotify for the current cluster again. Spotify only pushes updates when
+    /// playback changes, so a device that just came online (our built-in player
+    /// right after start) may be missing until we ask.
+    pub async fn refresh(&self) -> Result<RemoteState> {
+        let id = self.session.connection_id();
+        if !id.is_empty() {
+            self.register(&id).await?;
+        }
+        Ok(self.state())
+    }
+
     fn set_cluster(&self, c: Cluster) {
         let state = self.state_of(&c);
         *self.cluster.lock().unwrap() = Some(c);
@@ -310,12 +321,23 @@ impl Remote {
     async fn command(&self, device: Option<&str>, command: Value) -> Result<()> {
         let to = self.target(device)?;
         let me = self.session.device_id();
-        self.post_json(
-            Method::POST,
-            &format!("/connect-state/v1/player/command/from/{me}/to/{to}"),
-            json!({ "command": command }),
-        )
-        .await
+        let endpoint = command["endpoint"].as_str().unwrap_or("?").to_string();
+        let ctx = command["context"]["uri"].as_str().unwrap_or("").to_string();
+        let res = self
+            .post_json(
+                Method::POST,
+                &format!("/connect-state/v1/player/command/from/{me}/to/{to}"),
+                json!({ "command": command }),
+            )
+            .await;
+        log(&format!(
+            "connect: {endpoint} {ctx} -> {to}: {}",
+            match &res {
+                Ok(()) => "ok".to_string(),
+                Err(e) => format!("{e:#}"),
+            }
+        ));
+        res
     }
 
     /// Plays `uris[index]`. With `context` (a playlist, liked songs or search) the
