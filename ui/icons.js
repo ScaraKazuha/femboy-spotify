@@ -71,7 +71,59 @@ const ART = {
   fullscreen: 'fullscreen',
 };
 
+// The hand-drawn set (ui/art/icons/<file>.png) used everywhere in place of a line
+// icon of the same meaning. Names missing here keep the line icon.
+const ICON_ART = {
+  menu: 'menu',
+  dots: 'more',
+  'chevron-left': 'back',
+  'chevron-right': 'forward',
+  home: 'home',
+  search: 'search',
+  browse: 'browse',
+  bell: 'bell',
+  users: 'friends',
+  minimize: 'minimize',
+  maximize: 'maximize',
+  close: 'close',
+  library: 'library',
+  'plus-circle': 'create',
+  create: 'create',
+  heart: 'liked-songs',
+  bookmark: 'queue-nav',
+  pie: 'recent',
+  cat: 'customize',
+  ribbon: 'logout',
+  np: 'now-playing',
+  pen: 'edit',
+  play: 'play-big',
+  shuffle: 'shuffle-play',
+  plus: 'add-to-playlist',
+  minus: 'remove',
+  queue: 'add-to-queue',
+  'clear-queue': 'clear-queue',
+  timer: 'sleep-timer',
+  radio: 'song-radio',
+  user: 'artist',
+  disc: 'album',
+  share: 'share',
+  link: 'copy-link',
+  sparkle: 'loading',
+  sort: 'sort',
+  'search-in-list': 'search-in-list',
+  clock: 'clock',
+  rename: 'rename',
+  delete: 'delete',
+  follow: 'follow',
+  following: 'following',
+  'save-album': 'save-album',
+  'album-saved': 'album-saved',
+};
+
 function icon(name, cls = '') {
+  if (ICON_ART[name]) {
+    return `<img class="ico art ${cls}" src="art/icons/${ICON_ART[name]}.png" alt="" draggable="false">`;
+  }
   return `<svg class="ico ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 }
 
@@ -105,4 +157,4 @@ function setIcon(el, name) {
 }
 
 // load every button picture up front so swaps never flash empty
-[...Object.values(ART), 'unlike'].forEach((f) => { const i = new Image(); i.src = `art/icons/${f}.png`; });
+[...Object.values(ART), ...Object.values(ICON_ART), 'unlike'].forEach((f) => { const i = new Image(); i.src = `art/icons/${f}.png`; });

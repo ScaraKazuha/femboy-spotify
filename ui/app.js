@@ -67,8 +67,9 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
 }
-const PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd0e4"/><stop offset="1" stop-color="#d9c5f7"/></linearGradient></defs><rect width="100" height="100" fill="url(#g)"/><path d="M50 74S24 58 20 44c-3-10 3-20 13-20 7 0 12 4 17 10 5-6 10-10 17-10 10 0 16 10 13 20-4 14-30 30-30 30z" fill="#fff" opacity=".85"/></svg>');
+// pictures for things that have none of their own
+const PLACEHOLDER = 'art/icons/no-cover.png';
+const NO_ARTIST = 'art/icons/no-artist.png';
 const img = (url) => esc(url || PLACEHOLDER);
 const current = () => S.now;
 
@@ -214,7 +215,7 @@ function homeHtml() {
   const chips = [['all', 'All'], ['playlists', 'Playlists'], ['liked', 'Liked'], ['recent', 'Recent']]
     .map(([k, l]) => `<button class="chip ${S.filter === k ? 'active' : ''}" data-filter="${k}">${l}</button>`).join('');
   const tiles = [
-    `<button class="tile" data-open="liked"><div class="tile-art liked-art">${icon('heart')}</div><span>Liked Songs</span></button>`,
+    `<button class="tile" data-open="liked"><img class="tile-art liked-cover" src="art/icons/liked-cover.png" alt=""><span>Liked Songs</span></button>`,
     `<button class="tile" data-open="dj" title="Spotify DJ"><img class="dj-art" src="art/headphones.png" alt=""><span>DJ X</span></button>`,
   ]
     .concat(S.playlists.slice(0, 6).map((p) => `<button class="tile" data-playlist="${esc(p.id)}"><img src="${img(p.image)}" alt=""><span>${esc(p.name)}</span></button>`))
@@ -232,7 +233,7 @@ function homeHtml() {
     ${S.filter === 'all' ? `<div class="tiles">${tiles}</div>` : ''}
     ${shelves}
     ${cards ? `${head('Your playlists')}<div class="cards">${cards}</div>` : ''}
-    ${!S.playlists.length ? `<div class="empty"><div class="big">♡</div>loading your library...</div>` : ''}`;
+    ${!S.playlists.length ? `${loadingHtml('loading your library...')}` : ''}`;
 }
 
 function homeCardHtml(p) {
@@ -269,8 +270,8 @@ function libraryHtml() {
       <div class="list-meta">${S.playlists.length} playlists</div>
     </div></div>
     <div class="cards">
-      <button class="card-item" id="create-playlist"><div class="cov create-art">${icon('plus')}</div><div class="t">Create playlist</div><div class="st">a new one, just yours</div></button>
-      <button class="card-item" data-open="liked"><div class="cov liked-art">${icon('heart')}</div><div class="t">Liked Songs</div><div class="st">♡</div></button>
+      <button class="card-item" id="create-playlist"><img class="cov" src="art/icons/create.png" alt=""><div class="t">Create playlist</div><div class="st">a new one, just yours</div></button>
+      <button class="card-item" data-open="liked"><img class="cov liked-cover" src="art/icons/liked-cover.png" alt=""><div class="t">Liked Songs</div><div class="st">♡</div></button>
       <button class="card-item" data-open="dj"><img class="cov dj-art" src="art/headphones.png" alt=""><div class="t">DJ X</div><div class="st">Spotify DJ ♪</div></button>
       ${S.playlists.map(cardHtml).join('')}
     </div>`;
@@ -278,12 +279,12 @@ function libraryHtml() {
 
 function listHtml(v) {
   const cover = v.kind === 'liked'
-    ? `<div class="list-cover liked-art">${icon('heart')}</div>`
+    ? `<img class="list-cover liked-cover" src="art/icons/liked-cover.png" alt="">`
     : `<img class="list-cover" src="${img(v.image || v.tracks?.[0]?.image)}" alt="">`;
   const kinds = { liked: 'playlist', playlist: 'playlist', search: 'search', recent: 'history', queue: 'queue', album: 'album', radio: 'song radio' };
   let body;
   if (v.loading) body = loadingHtml();
-  else if (!v.tracks?.length) body = `<div class="empty"><div class="big">(｡•́︿•̀｡)</div>nothing here yet~</div>`;
+  else if (!v.tracks?.length) body = `${emptyHtml('nothing here yet~')}`;
   else {
     v.shown = shownTracks(v);
     body = v.shown.length ? tracksHtml(v.shown, v.kind, rowOpts(v)) : '<div class="tracks"><div class="empty small">no songs match (｡•́︿•̀｡)</div></div>';
@@ -300,14 +301,15 @@ function listHtml(v) {
     ${v.tracks?.length ? `<div class="list-actions">
       <button class="round-play" id="list-play" title="play">${icon('play')}</button>
       <button class="icon-btn" id="list-shuffle" title="shuffle play">${icon('shuffle')}</button>
-      ${v.kind === 'album' ? `<button class="icon-btn save-btn ${albumSaved ? 'on' : ''}" id="album-save" title="${albumSaved ? 'remove from Your Library' : 'save to Your Library'}"><img class="ico art" src="art/icons/${albumSaved ? 'liked' : 'add'}.png" alt=""></button>` : ''}
+      ${v.kind === 'album' ? `<button class="icon-btn save-btn ${albumSaved ? 'on' : ''}" id="album-save" title="${albumSaved ? 'remove from Your Library' : 'save to Your Library'}">${icon(albumSaved ? 'album-saved' : 'save-album')}</button>` : ''}
       ${hasMenu ? `<button class="icon-btn" id="list-more" title="more options for ${esc(v.title || '')}">${icon('dots')}</button>` : ''}
       ${listToolsHtml(v)}
     </div>` : ''}
     ${body}`;
 }
 
-const loadingHtml = () => `<div class="empty"><div class="spinner">${icon('sparkle')}</div>loading... ₍ᐢ. .ᐢ₎</div>`;
+const loadingHtml = (text = 'loading... ₍ᐢ. .ᐢ₎') => `<div class="empty"><img class="loading-art" src="art/icons/loading.png" alt="">${text}</div>`;
+const emptyHtml = (text) => `<div class="empty"><img class="empty-art" src="art/icons/empty.png" alt="">${text}</div>`;
 const sectionHead = (title) => `<div class="section-head"><h2>${esc(title)}</h2><div class="line">${icon('heart')}</div></div>`;
 
 // every artist name links to their page (older saved history has names only)
@@ -367,7 +369,7 @@ function tracksHtml(tracks, kind, { album = true, dates = false, offset = 0, hea
   const cur = current();
   const cls = [album ? '' : 'no-album', dates ? 'has-date' : ''].join(' ');
   return `<div class="tracks ${cls}">
-    ${head ? `<div class="trow head"><div class="tnum">#</div><div>title</div>${album ? '<div>album</div>' : ''}${dates ? '<div>date added</div>' : ''}<div></div><div class="tdur">time</div><div></div></div>` : ''}
+    ${head ? `<div class="trow head"><div class="tnum">#</div><div>title</div>${album ? '<div>album</div>' : ''}${dates ? '<div>date added</div>' : ''}<div></div><div class="tdur">${icon('clock', 'head-clock')}</div><div></div></div>` : ''}
     ${tracks.map((t, n) => {
       const i = n + offset;
       const playing = cur && cur.uri === t.uri;
@@ -409,9 +411,9 @@ function listToolsHtml(v) {
   if (!['liked', 'playlist', 'album'].includes(v.kind)) return '';
   return `<div class="list-tools">
     <label class="list-find ${v.filterText ? 'open' : ''}" title="search in ${esc(v.title || 'this list')}">
-      ${icon('search')}<input id="list-find" type="text" placeholder="Search in ${v.kind === 'album' ? 'album' : 'playlist'}" value="${esc(v.filterText || '')}" spellcheck="false" autocomplete="off">
+      ${icon('search-in-list')}<input id="list-find" type="text" placeholder="Search in ${v.kind === 'album' ? 'album' : 'playlist'}" value="${esc(v.filterText || '')}" spellcheck="false" autocomplete="off">
     </label>
-    ${v.kind !== 'album' ? `<button class="chip sort-btn" id="list-sort" title="sort">${esc(SORTS[v.sortKey || 'custom'])} ${icon('queue')}</button>` : ''}
+    ${v.kind !== 'album' ? `<button class="chip sort-btn" id="list-sort" title="sort">${esc(SORTS[v.sortKey || 'custom'])} ${icon('sort')}</button>` : ''}
   </div>`;
 }
 
@@ -477,7 +479,7 @@ async function openRadio(t) {
 function cardHtml2(c) {
   const round = c.kind === 'artist' ? 'round' : '';
   return `<button class="card-item ${round}" data-card="${esc(c.uri)}">
-      <img class="cov" src="${c.image ? img(c.image) : PLACEHOLDER}" alt="" loading="lazy">
+      <img class="cov" src="${c.image ? img(c.image) : c.kind === 'artist' ? NO_ARTIST : PLACEHOLDER}" alt="" loading="lazy">
       <div class="t">${esc(c.name)}</div>
       <div class="st">${esc(c.sub || c.kind)}</div>
     </button>`;
@@ -504,7 +506,7 @@ function searchHtml(v) {
     .map(([k, l]) => `<button class="chip ${v.tab === k ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('');
   let body;
   if (v.loading || !r) body = loadingHtml();
-  else if (!r.tracks.length) body = `<div class="empty"><div class="big">(｡•́︿•̀｡)</div>nothing found for "${esc(v.q)}"</div>`;
+  else if (!r.tracks.length) body = `${emptyHtml(`nothing found for "${esc(v.q)}"`)}`;
   else if (v.tab === 'songs') body = tracksHtml(r.tracks, 'search');
   else if (v.tab === 'artists') body = `<div class="cards">${r.artists.map(cardHtml2).join('')}</div>`;
   else if (v.tab === 'albums') body = `<div class="cards">${r.albums.map(cardHtml2).join('')}</div>`;
@@ -512,7 +514,7 @@ function searchHtml(v) {
     const top = r.artists[0];
     body = `<div class="search-top">
         ${top ? `<div><h2 class="mini-head">Top result</h2>
-          <button class="top-result" data-card="${esc(top.uri)}"><img src="${top.image ? img(top.image) : PLACEHOLDER}" alt=""><div class="t">${esc(top.name)}</div><div class="st">artist</div></button></div>` : ''}
+          <button class="top-result" data-card="${esc(top.uri)}"><img src="${top.image ? img(top.image) : NO_ARTIST}" alt=""><div class="t">${esc(top.name)}</div><div class="st">artist</div></button></div>` : ''}
         <div class="search-songs"><h2 class="mini-head">Songs</h2>${tracksHtml(r.tracks.slice(0, 4), 'search', { album: false, head: false })}</div>
       </div>
       ${r.artists.length ? `${sectionHead('Artists')}<div class="cards">${r.artists.slice(0, 6).map(cardHtml2).join('')}</div>` : ''}
@@ -574,7 +576,7 @@ function queueHtml(v) {
   v.shown = null;
   const now = current();
   return `
-    <div class="list-head"><div class="list-cover recent-art">${icon('queue')}</div><div>
+    <div class="list-head"><div class="list-cover recent-art">${icon('bookmark')}</div><div>
       <div class="list-kind">queue</div><h1 class="list-title">Queue</h1>
       <div class="list-meta">${S.activeDeviceName ? `playing on ${esc(S.activeDeviceName)}` : 'nothing is playing'}</div>
     </div></div>
@@ -583,10 +585,10 @@ function queueHtml(v) {
         <div class="tmain"><img src="${img(now.image)}" alt=""><div class="ttext"><div class="tname">${esc(now.name)}</div><div class="tartist">${artistLinks(now)}</div></div></div>
         <div class="talbum">${now.album_uri ? `<span class="alink" data-album="${esc(now.album_uri)}">${esc(now.album || '')}</span>` : esc(now.album || '')}</div>
         <div></div><div class="tdur">${fmt(now.duration_ms || 0)}</div><div></div></div></div>` : ''}
-    ${queued.length ? `<div class="queue-head">${sectionHead('Next in queue')}<button class="chip" id="queue-clear">Clear queue</button></div>
+    ${queued.length ? `<div class="queue-head">${sectionHead('Next in queue')}<button class="chip icon-chip" id="queue-clear">${icon('clear-queue')}Clear queue</button></div>
       ${tracksHtml(queued, 'queue', { head: false })}` : ''}
     ${rest.length ? `${sectionHead(`Next from: ${S.context || 'what\'s playing'}`)}${tracksHtml(rest, 'queue', { head: false, offset: queued.length })}` : ''}
-    ${!now && !v.tracks.length ? `<div class="empty"><div class="big">♪</div>play something and it shows up here~</div>` : ''}`;
+    ${!now && !v.tracks.length ? `${emptyHtml('play something and it shows up here~')}` : ''}`;
 }
 
 async function clearQueue() {
@@ -705,13 +707,13 @@ function openListMenu(btn) {
   }
   if (v.kind === 'playlist') {
     const p = S.playlists.find((x) => x.id === v.id);
-    if (p?.owner === 'you') items.push('-', { icon: 'pen', label: 'Rename', run: () => renamePlaylist(p) }, { icon: 'minus', label: 'Delete', run: () => removePlaylist(p) });
+    if (p?.owner === 'you') items.push('-', { icon: 'rename', label: 'Rename', run: () => renamePlaylist(p) }, { icon: 'delete', label: 'Delete', run: () => removePlaylist(p) });
     else if (p) items.push('-', { icon: 'minus', label: 'Remove from Your Library', run: () => removePlaylist(p) });
     items.push('-', { icon: 'link', label: 'Copy link to playlist', run: () => copyText(`https://open.spotify.com/playlist/${v.id}`, 'playlist link') });
   }
   if (v.kind === 'album') {
     const saved = S.savedAlbums?.has(v.uri);
-    items.push('-', { art: saved ? 'unlike' : 'add', label: saved ? 'Remove from Your Library' : 'Save to Your Library', run: () => toggleFollow(v.uri) });
+    items.push('-', { icon: saved ? 'album-saved' : 'save-album', label: saved ? 'Remove from Your Library' : 'Save to Your Library', run: () => toggleFollow(v.uri) });
     const firstArtist = v.tracks?.[0]?.artist_list?.[0];
     if (firstArtist) items.push({ icon: 'user', label: 'Go to artist', run: () => openArtist(firstArtist.uri) });
     items.push('-', { icon: 'link', label: 'Copy link to album', run: () => copyText(link(v.uri), 'album link') });
@@ -745,7 +747,7 @@ function artistHtml(v) {
       <div class="st">${al.year || ''}</div>
     </button>`).join('');
   return `
-    <div class="list-head artist-head"><img class="list-cover artist-cover" src="${v.image ? img(v.image) : PLACEHOLDER}" alt=""><div>
+    <div class="list-head artist-head"><img class="list-cover artist-cover" src="${v.image ? img(v.image) : NO_ARTIST}" alt=""><div>
       <div class="list-kind">artist</div>
       <h1 class="list-title" style="font-size:${v.title.length > 24 ? 40 : 60}px">${esc(v.title)}</h1>
       <div class="list-meta">${[v.albums.length && `${v.albums.length} albums`, v.singles.length && `${v.singles.length} singles & EPs`].filter(Boolean).join(' · ')}</div>
@@ -753,7 +755,7 @@ function artistHtml(v) {
     <div class="list-actions">
       ${v.top.length ? `<button class="round-play" id="list-play" title="play ${esc(v.title)}">${icon('play')}</button>
       <button class="icon-btn" id="list-shuffle" title="shuffle play">${icon('shuffle')}</button>` : ''}
-      <button class="chip follow-btn ${S.followed?.has(v.uri) ? 'active' : ''}" id="artist-follow">${S.followed?.has(v.uri) ? 'Following' : 'Follow'}</button>
+      <button class="chip icon-chip follow-btn ${S.followed?.has(v.uri) ? 'active' : ''}" id="artist-follow">${icon(S.followed?.has(v.uri) ? 'following' : 'follow')}${S.followed?.has(v.uri) ? 'Following' : 'Follow'}</button>
     </div>
     ${v.top.length ? `${sectionHead('Popular')}${tracksHtml(v.top, 'artist')}` : ''}
     ${v.albums.length ? `${sectionHead('Albums')}<div class="cards">${cards(v.albums)}</div>` : ''}
@@ -762,7 +764,7 @@ function artistHtml(v) {
 
 function lyricsViewHtml() {
   const t = current();
-  if (!t) return `<div class="empty"><div class="big">♪</div>play something first~</div>`;
+  if (!t) return emptyHtml('play something first~');
   if (!S.lyrics) return `<div class="empty"><div class="big">♪</div>${S.lyricsFor === t.id ? 'no lyrics for this song (｡•́︿•̀｡)' : 'loading lyrics...'}</div>`;
   return `<div class="lyrics-view" id="lyrics-view">${S.lyrics.map((l, i) => `<p data-line="${i}" data-ms="${l.start_ms}">${esc(l.words)}</p>`).join('')}</div>`;
 }
@@ -786,9 +788,9 @@ function renderSideThumbs() {
 function renderNow() {
   const t = current();
   const cover = t?.image_large || t?.image;
-  const coverHtml = cover ? `<img src="${esc(cover)}" alt="">` : `<div class="cover-placeholder">${icon('heart')}</div>`;
+  const coverHtml = cover ? `<img src="${esc(cover)}" alt="">` : `<img class="cover-placeholder" src="art/icons/no-cover.png" alt="">`;
   $('right-cover').innerHTML = coverHtml;
-  $('np-cover').innerHTML = t?.image ? `<img src="${esc(t.image)}" alt="">` : `<div class="cover-placeholder">${icon('heart')}</div>`;
+  $('np-cover').innerHTML = t?.image ? `<img src="${esc(t.image)}" alt="">` : `<img class="cover-placeholder" src="art/icons/no-cover.png" alt="">`;
   $('right-name').textContent = t ? t.name : 'nothing yet~';
   $('right-artist').innerHTML = t ? artistLinks(t) : 'pick a song ♡';
   $('np-name').textContent = t ? t.name : '—';
@@ -1624,7 +1626,7 @@ document.querySelectorAll('.side-btn[data-nav]').forEach((b) => b.addEventListen
   const n = b.dataset.nav;
   if (n === 'library') go({ name: 'library' });
   else if (n === 'search') showMenu([
-    { icon: 'plus', label: 'Create playlist', run: createPlaylist },
+    { icon: 'create', label: 'Create playlist', run: createPlaylist },
     { icon: 'search', label: 'Search', run: () => $('search').focus() },
   ], { x: b.getBoundingClientRect().right + 8, y: b.getBoundingClientRect().top });
   else if (n === 'liked') openLiked();
@@ -1860,7 +1862,7 @@ async function loadLibrary() {
   invoke('me').then((me) => {
     S.me = me;
     if (me.avatar) $('avatar-img').src = me.avatar;
-    else $('avatar-img').src = PLACEHOLDER;
+    else $('avatar-img').src = NO_ARTIST;
   }).catch(() => {});
   try {
     S.playlists = await invoke('playlists');
@@ -1942,7 +1944,7 @@ window.addEventListener('blur', hideTip);
 async function start() {
   adoptTitles(document.body);
   hydrateIcons();
-  $('avatar-img').src = PLACEHOLDER;
+  $('avatar-img').src = NO_ARTIST;
   drawVolume(S.volume);
   renderPlayState();
   render();

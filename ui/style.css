@@ -1336,3 +1336,53 @@ button:active { transition-duration: .12s; }
   outline: none;
 }
 .ask-card input:focus { border-color: var(--pink-2); }
+
+/* ───────── the 47 hand-drawn icons ───────── */
+
+/* covers: the pictures fill their frames */
+img.liked-cover, img.cover-placeholder { object-fit: cover; display: block; background: var(--pink-soft); }
+img.cover-placeholder { width: 100%; height: 100%; }
+.tile img.tile-art { width: 60px; height: 60px; }
+
+/* empty screens and loading */
+.empty-art { width: 170px; height: 170px; margin: 0 auto 12px; display: block; filter: drop-shadow(0 8px 16px rgba(120, 60, 110, .15)); }
+.loading-art { width: 64px; height: 64px; margin: 0 auto 14px; display: block; animation: star-hop 1s var(--ease) infinite; }
+@keyframes star-hop {
+  0%, 100% { transform: translateY(0) rotate(0) scale(1); }
+  40% { transform: translateY(-14px) rotate(-12deg) scale(1.06); }
+  70% { transform: translateY(0) rotate(8deg) scale(.96); }
+}
+.empty.small .empty-art { width: 110px; height: 110px; }
+
+/* picture icons are colourful already: no tinting, a little bigger than line icons */
+.icon-btn > .ico.art { width: 28px; height: 28px; }
+.topbar .icon-btn > .ico.art { width: 30px; height: 30px; }
+.win-controls .icon-btn > .ico.art { width: 22px; height: 22px; }
+.home-btn > .ico.art { width: 30px; height: 30px; }
+.search-icon .ico.art, .search > .ico.art { width: 26px; height: 26px; }
+.side-btn > .ico.art { width: 34px; height: 34px; }
+.side-btn.active > .ico.art, .icon-btn.active > .ico.art { filter: drop-shadow(0 0 6px rgba(255, 127, 178, .7)); }
+.icon-btn:hover > .ico.art, .side-btn:hover > .ico.art, .home-btn:hover > .ico.art { transform: scale(1.12) rotate(-4deg); }
+.section-head .line .ico.art { width: 26px; height: 26px; }
+
+/* play buttons: the drawing is the button */
+.round-play:has(> .ico.art), .art-play:has(> .ico.art), .hero-play:has(> .ico.art) { background: none; border: 0; box-shadow: none; }
+.round-play > .ico.art { width: 64px; height: 64px; margin: 0; filter: drop-shadow(0 4px 8px rgba(110, 53, 99, .25)); }
+.art-play > .ico.art { width: 100%; height: 100%; }
+.hero-play > .ico.art { width: 78px; height: 78px; margin: 0; }
+.tplay > .ico.art { width: 26px; height: 26px; }
+.tmore > .ico.art { width: 26px; height: 26px; }
+#list-shuffle > .ico.art, #list-more > .ico.art { width: 34px; height: 34px; }
+
+/* chips with a picture (Follow, Clear queue, sort) */
+.icon-chip, .sort-btn { display: inline-flex; align-items: center; gap: 8px; }
+.icon-chip > .ico.art, .sort-btn > .ico.art { width: 24px; height: 24px; }
+.list-find > .ico.art { width: 26px; height: 26px; flex: 0 0 26px; }
+.head-clock.ico.art { width: 20px; height: 20px; display: inline-block; vertical-align: middle; }
+.save-btn > .ico.art { width: 40px; height: 40px; }
+
+/* menus */
+.menu-item > .ico.art { width: 24px; height: 24px; flex: 0 0 24px; }
+.menu-item .mi-arrow.ico.art { width: 14px; height: 14px; flex: 0 0 14px; }
+.list-cover.recent-art .ico.art { width: 70%; height: 70%; }
+.cover-placeholder > .ico.art { width: 60%; height: 60%; }
