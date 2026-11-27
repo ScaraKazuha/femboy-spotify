@@ -9,6 +9,16 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="style.css">
+  <script>
+    // pick the theme before the first paint (no flash of the light theme)
+    (function () {
+      var t = 'light';
+      try { t = JSON.parse(localStorage.getItem('theme')) || 'light'; } catch (e) {}
+      if (/[?&]theme=(light|dark)/.test(location.search)) t = location.search.match(/theme=(light|dark)/)[1]; // demo / screenshots
+      if (t === 'auto') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
 </head>
 <body>
   <div id="app">
@@ -29,6 +39,7 @@
         </label>
       </div>
       <div class="top-right" data-tauri-drag-region>
+        <button class="icon-btn" id="btn-theme" title="theme" data-icon="moon"></button>
         <button class="icon-btn bell" id="btn-bell" title="notifications" data-icon="bell"><span class="bell-dot hidden" id="bell-dot"></span></button>
         <button class="icon-btn" id="btn-friends" title="friends" data-icon="users"></button>
         <button class="avatar" id="btn-avatar" title="account"><img id="avatar-img" alt=""></button>

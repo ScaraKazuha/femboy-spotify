@@ -20,6 +20,7 @@ A cute, pastel-pink Spotify client written in Rust. ✧
 - queue, shuffle, repeat (all / one), seek, volume, add to liked songs
 - custom banner: click ✎ on the banner (or the cat in the sidebar) to set your own picture and title
 - frameless pastel window, keyboard shortcuts
+- light and dark theme (or follow Windows): the moon / sun button in the top bar
 - bonus: a terminal version (`femboy-spotify-tui`) for terminal lovers
 
 ## Requirements

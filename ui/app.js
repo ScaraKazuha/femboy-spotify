@@ -16,6 +16,37 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
 };
 
+/* ───────────── light / dark theme ───────────── */
+
+const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+const themeChoice = () => store.get('theme', 'light'); // light | dark | auto
+const themeNow = () => {
+  const forced = DEMO && location.search.match(/theme=(light|dark)/); // demo / screenshots
+  if (forced && !store.get('themeTouched', false)) return forced[1];
+  return themeChoice() === 'auto' ? (darkQuery.matches ? 'dark' : 'light') : themeChoice();
+};
+
+function applyTheme({ animate = false } = {}) {
+  const root = document.documentElement;
+  const next = themeNow();
+  if (root.dataset.theme !== next && animate) {
+    root.classList.add('theme-switching');
+    setTimeout(() => root.classList.remove('theme-switching'), 450);
+  }
+  root.dataset.theme = next;
+  const btn = document.getElementById('btn-theme');
+  if (btn) {
+    setIcon(btn, next === 'dark' ? 'sun' : 'moon');
+    btn.title = next === 'dark' ? 'theme: dark (click to change)' : 'theme: light (click to change)';
+  }
+}
+function setTheme(choice) {
+  store.set('theme', choice);
+  store.set('themeTouched', true);
+  applyTheme({ animate: true });
+}
+darkQuery.addEventListener('change', () => { if (themeChoice() === 'auto') applyTheme({ animate: true }); });
+
 const S = {
   me: null,
   playlists: [],
@@ -773,7 +804,7 @@ function updateSidebar() {
   const v = S.view;
   const active = v.name === 'library' ? 'library' : v.name === 'queue' ? 'queue' : v.kind === 'liked' ? 'liked' : v.name === 'recent' ? 'recent' : '';
   document.querySelectorAll('.side-btn[data-nav]').forEach((b) => b.classList.toggle('active', b.dataset.nav === active));
-  $('btn-home').style.background = v.name === 'home' ? '#fff' : '';
+  $('btn-home').classList.toggle('on', v.name === 'home');
   $('btn-queue').classList.toggle('active', v.name === 'queue');
   $('btn-lyrics').classList.toggle('active', v.name === 'lyrics');
 }
@@ -1657,6 +1688,15 @@ document.querySelectorAll('.side-btn[data-nav]').forEach((b) => b.addEventListen
   else if (n === 'logout') doLogout();
 }));
 
+$('btn-theme').onclick = () => {
+  const c = themeChoice();
+  const mark = (k) => (c === k ? 'check-circle' : '');
+  showMenu([
+    { icon: mark('light') || 'moon', label: 'Light', run: () => setTheme('light') },
+    { icon: mark('dark') || 'sun', label: 'Dark', run: () => setTheme('dark') },
+    { icon: mark('auto') || 'devices', label: 'Same as Windows', run: () => setTheme('auto') },
+  ], $('btn-theme'));
+};
 $('btn-home').onclick = () => go({ name: 'home' });
 $('btn-browse').onclick = () => go({ name: 'library' });
 $('btn-back').onclick = goBack;
@@ -1965,6 +2005,7 @@ window.addEventListener('blur', hideTip);
 async function start() {
   adoptTitles(document.body);
   hydrateIcons();
+  applyTheme();
   $('avatar-img').src = NO_ARTIST;
   drawVolume(S.volume);
   renderPlayState();

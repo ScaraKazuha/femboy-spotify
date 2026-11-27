@@ -1386,3 +1386,70 @@ img.cover-placeholder { width: 100%; height: 100%; }
 .menu-item .mi-arrow.ico.art { width: 14px; height: 14px; flex: 0 0 14px; }
 .list-cover.recent-art .ico.art { width: 70%; height: 70%; }
 .cover-placeholder > .ico.art { width: 60%; height: 60%; }
+
+/* ───────── dark theme ─────────
+   Same layout and the same hand-drawn icons, banner and covers; only the colours
+   behind them change. Light stays exactly as above. Switched by data-theme on <html>. */
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1b1322;
+  --panel: rgba(43, 29, 52, 0.84);
+  --panel-solid: #2b1d34;
+  --line: #573a5c;
+  --line-strong: #7c5683;
+  --plum: #f8ddef;
+  --plum-2: #e9b5d8;
+  --plum-soft: #b991b3;
+  --pink: #ff9cc5;
+  --pink-2: #ff8fc0;
+  --pink-soft: #4a2b48;
+  --cream: #33233d;
+  --peach: #5a3a4a;
+  --blue: #4d6f99;
+  --blue-2: #3f5d84;
+  --track: #4b3854;
+  /* ears: dark fill to match the panels, outlines matching the borders */
+  --ear: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 46 36'%3E%3Cpath d='M2 36 11 7Q14-1 20 5L44 36Z' fill='%23281b30'/%3E%3Cpath d='M2 36 11 7Q14-1 20 5L44 36' fill='none' stroke='%23573a5c' stroke-width='2' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M11.5 34 15.5 15Q17 11 20 14L33 34Z' fill='%23d98bb0'/%3E%3C/svg%3E");
+  --ear-card: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 46 36'%3E%3Cpath d='M2 36 11 7Q14-1 20 5L44 36Z' fill='%232b1d34'/%3E%3Cpath d='M2 36 11 7Q14-1 20 5L44 36' fill='none' stroke='%237c5683' stroke-width='2' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M11.5 34 15.5 15Q17 11 20 14L33 34Z' fill='%23d98bb0'/%3E%3C/svg%3E");
+}
+[data-theme="dark"] body {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #3a1f3c 0%, transparent 60%),
+    radial-gradient(900px 600px at 110% 110%, #241d42 0%, transparent 60%),
+    var(--bg);
+}
+[data-theme="dark"] .panel { box-shadow: 0 6px 24px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .05); }
+[data-theme="dark"] .home-btn:hover,
+[data-theme="dark"] .chip:hover,
+[data-theme="dark"] .tile:hover,
+[data-theme="dark"] .top-result:hover { background: #3d2a48; }
+[data-theme="dark"] .top-result { background: rgba(61, 42, 72, .6); }
+[data-theme="dark"] .hero-edit { background: rgba(43, 29, 52, .8); }
+[data-theme="dark"] .update-notes,
+[data-theme="dark"] .field input[type="text"],
+[data-theme="dark"] .ask-card input,
+[data-theme="dark"] .list-find.open { background: #3a2845; color: var(--plum); }
+[data-theme="dark"] .overlay { background: rgba(16, 10, 22, .72); }
+[data-theme="dark"] .list-head { background: linear-gradient(180deg, #3b2346 0%, transparent 100%); }
+[data-theme="dark"] .dev.active { background: linear-gradient(90deg, #52304d, #3c2c55); }
+[data-theme="dark"] .login-error { background: #4a1f2e; border-color: #c75b80; color: #ffd3e0; }
+[data-theme="dark"] .trow:not(.head):hover { background: rgba(255, 156, 197, .12); }
+[data-theme="dark"] .trow.selected { background: rgba(255, 156, 197, .22); }
+[data-theme="dark"] .menu, [data-theme="dark"] .tip { box-shadow: 0 18px 44px rgba(0, 0, 0, .45); }
+[data-theme="dark"] .buddy .onair { box-shadow: 0 0 0 2px var(--panel-solid), 0 0 12px rgba(139, 92, 246, .6); }
+[data-theme="dark"] .hero-title { -webkit-text-stroke-color: #2b1d34; text-shadow: none; }
+[data-theme="dark"] .side-btn.active { color: #fff; }
+/* dark picture icons (back arrow, more, sort...) stay readable on the dark panels */
+[data-theme="dark"] .ico.art { filter: drop-shadow(0 0 1.5px rgba(255, 220, 240, .55)); }
+[data-theme="dark"] .side-btn.active > .ico.art,
+[data-theme="dark"] .icon-btn.active > .ico.art { filter: drop-shadow(0 0 6px rgba(255, 127, 178, .8)); }
+
+/* colours glide when the theme changes (only during the switch) */
+html.theme-switching, html.theme-switching *, html.theme-switching *::before, html.theme-switching *::after {
+  transition: background-color .4s var(--ease), color .4s var(--ease), border-color .4s var(--ease), box-shadow .4s var(--ease) !important;
+}
+/* home button lit while on the home page */
+.home-btn.on { background: #fff; }
+[data-theme="dark"] .home-btn.on { background: #4a2f52; }
+[data-theme="dark"] .section-head .line .ico { background: #2a1c33; }
