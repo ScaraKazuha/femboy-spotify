@@ -32,6 +32,12 @@ A cute, pastel-pink Spotify client written in Rust. ✧
 
 ## Install & run
 
+**Windows:** download **Femboy.Spotify_x.y.z_x64-setup.exe** from the
+[latest release](https://github.com/ScaraKazuha/femboy-spotify/releases/latest) and run it.
+The app updates itself after that (watch the bell in the top bar).
+
+From source:
+
 ```sh
 git clone https://github.com/ScaraKazuha/femboy-spotify
 cd femboy-spotify
