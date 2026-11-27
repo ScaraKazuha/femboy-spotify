@@ -776,6 +776,15 @@ async fn install_update(app: AppHandle) -> CmdResult<()> {
 /// replaces the old Startup-folder shortcut of earlier versions.
 fn setup_autostart(app: &AppHandle) {
     use tauri_plugin_autostart::ManagerExt;
+    // development builds (cargo's target folder) never touch the real autostart entry
+    let exe = std::env::current_exe().unwrap_or_default();
+    if exe.components().any(|c| c.as_os_str().eq_ignore_ascii_case("target")) {
+        return;
+    }
+    // keep an existing entry pointing at this copy (e.g. after moving or reinstalling)
+    if app.autolaunch().is_enabled().unwrap_or(false) {
+        let _ = app.autolaunch().enable();
+    }
     if let Some(startup) = dirs::data_dir() {
         let old = startup.join(r"Microsoft\Windows\Start Menu\Programs\Startup\Femboy Spotify.lnk");
         if old.exists() && std::fs::remove_file(&old).is_ok() {
