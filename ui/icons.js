@@ -28,6 +28,8 @@ const ICONS = {
   'repeat-one': '<path d="M4 11.5v-1.5a3.5 3.5 0 0 1 3.5-3.5H19M16 3.5l3 3-3 3M20 12.5V14a3.5 3.5 0 0 1-3.5 3.5H5M8 20.5l-3-3 3-3"/><path d="M11.3 10.3l1.2-.8v5" stroke-width="1.8"/>',
   disc: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.6"/>',
   pen: '<path d="M14.5 4.5l5 5L9 20H4v-5z"/><path d="M12.5 6.5l5 5"/>',
+  // lyrics: a tilted microphone like Spotify's
+  mic: '<circle cx="15" cy="9" r="5.5"/><path d="M11.3 5.3l7.4 7.4"/><path d="M11 13 4.2 19.8M10.2 12.2l1.6 1.6"/>',
   queue: '<path d="M4 6.5h16M4 12h16M4 17.5h10"/>',
   devices: '<rect x="3" y="4" width="11" height="16" rx="2"/><rect x="16.5" y="8" width="4.5" height="12" rx="1.2"/><path d="M7.5 16.5h2"/>',
   volume: '<path d="M4 9.5v5h3.5l5 4v-13l-5 4z" fill="currentColor"/><path d="M16 8.8a4.6 4.6 0 0 1 0 6.4M18.7 6.2a8.3 8.3 0 0 1 0 11.6"/>',

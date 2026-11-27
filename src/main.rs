@@ -251,6 +251,9 @@ const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreen
 
 /// Sites the sign-in window may visit (Spotify and its "continue with" providers).
 fn player_may_visit(url: &tauri::Url) -> bool {
+    if url.as_str() == "about:blank" {
+        return true; // used to unload the player on exit
+    }
     let host = url.host_str().unwrap_or_default();
     ["spotify.com", "google.com", "apple.com", "facebook.com", "gstatic.com"]
         .iter()
@@ -423,8 +426,19 @@ fn main() {
                     let _ = window.hide();
                     let _ = window.set_skip_taskbar(true);
                 } else {
-                    // the hidden player would keep the app alive otherwise
-                    window.app_handle().exit(0);
+                    // the hidden player would keep the app alive otherwise. Unload it
+                    // first so it leaves Spotify Connect instead of lingering as a dead
+                    // "active" device that swallows the next play command.
+                    api.prevent_close();
+                    let _ = window.hide();
+                    let app = window.app_handle().clone();
+                    if let Some(player) = app.get_webview_window(PLAYER) {
+                        let _ = player.navigate("about:blank".parse().unwrap());
+                    }
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(700));
+                        app.exit(0);
+                    });
                 }
             }
         })

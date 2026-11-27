@@ -386,10 +386,18 @@ function cacheTracks(list) { (list || []).forEach((t) => S.cache.set(t.uri, t));
 const isBuiltin = (d) => /^web player/i.test(d.name || '');
 const deviceName = (d) => (isBuiltin(d) ? 'femboy spotify (this app) ♡' : d.name);
 
-// a device to start on when nothing is active yet: our own player first
+// where to start music. Keep going on a device that is playing right now; otherwise
+// use our own player. Every app start makes a new web-player device and Spotify can
+// keep the previous (dead) one marked active for a while, so an idle "active"
+// device is not trusted and a live built-in one wins over it.
 function pickDevice() {
-  if (S.activeDevice) return null;
-  const d = S.devices.find(isBuiltin) || S.devices.find((x) => x.kind === 'computer') || S.devices[0];
+  const active = S.devices.find((d) => d.id === S.activeDevice);
+  if (active && S.playing) return null;
+  const builtins = S.devices.filter(isBuiltin);
+  const builtin = builtins.find((d) => d.id !== S.activeDevice) || builtins[0];
+  if (builtin) return builtin.id;
+  if (active) return null;
+  const d = S.devices.find((x) => x.kind === 'computer') || S.devices[0];
   return d ? d.id : null;
 }
 
@@ -443,9 +451,13 @@ async function togglePlay() {
     else if (S.liked?.length) playFrom(S.liked, 0, 'Liked Songs', 'liked');
     return;
   }
-  if (!S.activeDevice) {
-    // nothing active any more: start the song again on a device
+  // the active device is a web player from an earlier app start (ours is the other one)
+  const staleActive = S.devices.some((d) => d.id === S.activeDevice && isBuiltin(d))
+    && S.devices.filter(isBuiltin).length > 1;
+  if (!S.activeDevice || (staleActive && !S.playing)) {
+    // nothing (alive) active any more: start the song again on a device
     if (S.index >= 0) return playIndex(S.index);
+    if (S.djOn) return playDJ();
     return showNoDevice();
   }
   if (S.playing) {
