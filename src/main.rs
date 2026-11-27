@@ -452,6 +452,24 @@ async fn player_status(app: AppHandle) -> CmdResult<bool> {
     Ok(player_signed_in(&w))
 }
 
+/// Sets the built-in player's volume (0..=100) right on its page. Instant, unlike a
+/// Spotify Connect volume command, which goes through Spotify's servers and which the
+/// web player often undoes when the volume goes up.
+#[tauri::command]
+fn player_volume(app: AppHandle, volume: u16) -> CmdResult<()> {
+    let w = app.get_webview_window(PLAYER).ok_or("no built-in player")?;
+    let v = f64::from(volume.min(100)) / 100.0;
+    // the slider snaps to 10 % steps unless its step is relaxed while we set it
+    w.eval(format!(
+        "(() => {{ const i = [...document.querySelectorAll('input[type=range]')].find((x) => x.max === '1'); \
+         if (!i) return; const step = i.getAttribute('step'); i.setAttribute('step', 'any'); \
+         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '{v}'); \
+         i.dispatchEvent(new Event('input', {{ bubbles: true }})); i.dispatchEvent(new Event('change', {{ bubbles: true }})); \
+         if (step) i.setAttribute('step', step); }})()"
+    ))
+    .map_err(err)
+}
+
 /// Shows the player window on Spotify's sign-in page; it hides itself once signed in.
 #[tauri::command]
 async fn player_login(app: AppHandle) -> CmdResult<()> {
@@ -463,6 +481,24 @@ async fn player_login(app: AppHandle) -> CmdResult<()> {
     w.set_skip_taskbar(false).map_err(err)?;
     w.show().map_err(err)?;
     w.set_focus().map_err(err)
+}
+
+/// The pink UI is laid out for a 1480×880 window. Zoom the page (like the browser's
+/// Ctrl+wheel) so that whole layout fits the current window: bigger on big screens,
+/// smaller when the window is made small. Everything scales together, icons and
+/// text included, so nothing gets cut off or squashed.
+fn fit_zoom(window: &tauri::Window) {
+    const DESIGN: (f64, f64) = (1480.0, 880.0);
+    let (Ok(size), Ok(scale)) = (window.inner_size(), window.scale_factor()) else { return };
+    if size.width == 0 || size.height == 0 {
+        return; // minimized
+    }
+    let logical = size.to_logical::<f64>(scale);
+    let zoom = (logical.width / DESIGN.0).min(logical.height / DESIGN.1).clamp(0.5, 1.75);
+    let zoom = (zoom * 100.0).round() / 100.0;
+    if let Some(w) = window.app_handle().get_webview_window("main") {
+        let _ = w.set_zoom(zoom);
+    }
 }
 
 /// Tauri only sets the small window icon, so the taskbar shows Windows' blank one.
@@ -555,6 +591,7 @@ fn main() {
         .setup(|app| {
             if let Some(main) = app.get_webview_window("main") {
                 set_big_icon(&main);
+                fit_zoom(&main.as_ref().window());
             }
             // load the built-in player in the background right away
             if let Err(e) = player_window(app.handle()) {
@@ -563,6 +600,11 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == "main"
+                && matches!(event, WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. })
+            {
+                fit_zoom(window);
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == PLAYER {
                     // closing the sign-in window only hides it; the player lives on
@@ -588,6 +630,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             spotify_home,
+            player_volume,
             player_status,
             player_login,
             init,

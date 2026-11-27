@@ -14,8 +14,8 @@
         "title": "Femboy Spotify",
         "width": 1480,
         "height": 880,
-        "minWidth": 1060,
-        "minHeight": 660,
+        "minWidth": 760,
+        "minHeight": 460,
         "center": true,
         "decorations": false,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows"

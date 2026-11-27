@@ -516,21 +516,40 @@ function seekTo(ms) {
   tick();
 }
 
-let volTimer;
 let volTouched = 0;
+let volSentAt = 0;
 function drawVolume(v) {
   $('vol-fill').style.width = v + '%';
   $('vol-knob').style.left = v + '%';
 }
-function setVolume(v, { send = true } = {}) {
+
+// Our own player is turned up/down right on its page (instant); other devices get a
+// Spotify Connect command (goes through Spotify, so it is sent less often).
+const onBuiltin = () => {
+  const d = S.devices.find((x) => x.id === S.activeDevice) || (!S.activeDevice && S.devices.find(isBuiltin));
+  return !!d && isBuiltin(d);
+};
+function sendVolume(v) {
+  if (onBuiltin()) {
+    // (the player reports its new level to Spotify by itself, so other apps stay in step)
+    invoke('player_volume', { volume: v }).catch(() => {});
+  } else {
+    invoke('set_volume', { volume: v }).catch(() => {});
+  }
+  volSentAt = performance.now();
+}
+
+// `live`: called while dragging; sends at most every 40 ms (own player) / 200 ms (others)
+function setVolume(v, { live = false } = {}) {
   S.volume = Math.max(0, Math.min(100, Math.round(v)));
   S.muted = false;
   volTouched = performance.now();
+  store.set('volume', S.volume);
   drawVolume(S.volume);
   renderPlayState();
-  if (!send) return;
-  clearTimeout(volTimer);
-  volTimer = setTimeout(() => invoke('set_volume', { volume: S.volume }).catch(() => {}), 120);
+  const gap = onBuiltin() ? 40 : 200;
+  if (live && performance.now() - volSentAt < gap) return;
+  sendVolume(S.volume);
 }
 
 function setOption(name, value) {
@@ -820,7 +839,7 @@ bindBar($('seek-bar'), (r) => {
   if (current()) seekTo(r * current().duration_ms);
 });
 
-bindBar($('vol-bar'), (r) => setVolume(r * 100, { send: false }), (r) => setVolume(r * 100));
+bindBar($('vol-bar'), (r) => setVolume(r * 100, { live: true }), (r) => setVolume(r * 100));
 
 /* ───────────── events ───────────── */
 
@@ -972,7 +991,7 @@ $('btn-repeat').onclick = () => {
 };
 $('btn-mute').onclick = () => {
   if (S.muted) setVolume(S.volume);
-  else { S.muted = true; invoke('set_volume', { volume: 0 }).catch(() => {}); drawVolume(0); renderPlayState(); }
+  else { S.muted = true; sendVolume(0); drawVolume(0); renderPlayState(); }
 };
 $('right-add').onclick = saveCurrent;
 $('np-add').onclick = saveCurrent;
