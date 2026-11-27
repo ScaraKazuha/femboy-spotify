@@ -1038,6 +1038,22 @@ function setNow(t) {
 const DJ_URI = 'spotify:playlist:37i9dQZF1EYkqdzj48dyYq';
 const DJ_ART = 'art/headphones.png';
 
+// DJ X's voice only plays in the official Spotify app, so DJ X goes there when that
+// app is open on this computer (Femboy Spotify still drives it); otherwise our player.
+async function djDevice() {
+  const here = await invoke('local_spotify').catch(() => null);
+  if (here?.running && here.name) {
+    try {
+      const st = await invoke('refresh_devices');
+      S.devices = st.devices || [];
+      S.activeDevice = st.active_device;
+    } catch { /* use the list we have */ }
+    const app = S.devices.find((d) => !isBuiltin(d) && d.name.toLowerCase() === here.name.toLowerCase());
+    if (app) return { id: app.id, voice: true };
+  }
+  return { id: await chooseDevice(), voice: false };
+}
+
 async function playDJ() {
   S.queue = [];
   S.index = -1;
@@ -1048,9 +1064,14 @@ async function playDJ() {
   S.buffering = true;
   setPos(0);
   setNow({ uri: 'dj:start', id: '', name: 'DJ X is warming up ♪', artists: 'Spotify DJ', album: '', duration_ms: 0, image: DJ_ART, image_large: DJ_ART });
-  toast('DJ X is on the way ♪');
   try {
-    await invoke('play_dj', { device: await chooseDevice() });
+    const { id, voice } = await djDevice();
+    toast(voice ? 'DJ X is on in your Spotify app, with his voice ♪' : 'DJ X is on the way ♪');
+    if (!voice && !S.djVoiceHint) {
+      S.djVoiceHint = true;
+      setTimeout(() => toast('DJ X only talks in the Spotify app: open it to hear his voice ♡'), 3600);
+    }
+    await invoke('play_dj', { device: id });
   } catch (e) {
     S.playing = false;
     S.djOn = false;
@@ -1997,6 +2018,7 @@ async function demoInvoke(cmd, args = {}) {
     case 'song_radio': return DEMO_TRACKS.slice().reverse();
     case 'set_saved': case 'playlist_add': case 'playlist_remove': case 'add_to_queue': case 'set_followed':
     case 'playlist_rename': case 'playlist_unfollow': case 'clear_queue': case 'dj_switch': return null;
+    case 'local_spotify': return { name: 'DEMO-PC', running: false };
     case 'playlist_create': return 'pl0';
     case 'collection_set': return [];
     case 'tracks_info': return DEMO_TRACKS.filter((t) => args.uris.includes(t.uri));

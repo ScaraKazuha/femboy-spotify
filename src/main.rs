@@ -254,6 +254,33 @@ async fn tracks_info(state: State<'_, AppState>, uris: Vec<String>) -> CmdResult
     state.core().await?.api.tracks_by_uri(&uris).await.map_err(err)
 }
 
+#[derive(serde::Serialize)]
+struct LocalSpotify {
+    /// the Spotify app names its Connect device after the computer
+    name: String,
+    running: bool,
+}
+
+/// Is the official Spotify app open on this computer? (DJ X only talks there.)
+#[tauri::command]
+fn local_spotify() -> LocalSpotify {
+    let name = std::env::var("COMPUTERNAME").unwrap_or_default();
+    #[cfg(windows)]
+    let running = {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::process::Command::new("tasklist")
+            .args(["/FI", "IMAGENAME eq Spotify.exe", "/NH"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_ascii_lowercase().contains("spotify.exe"))
+            .unwrap_or(false)
+    };
+    #[cfg(not(windows))]
+    let running = false;
+    LocalSpotify { name, running }
+}
+
 /// DJ X "switch it up": skip to the DJ's next block.
 #[tauri::command]
 async fn dj_switch(state: State<'_, AppState>) -> CmdResult<()> {
@@ -786,6 +813,7 @@ fn main() {
             playlist_unfollow,
             clear_queue,
             dj_switch,
+            local_spotify,
             tracks_info,
             lyrics,
             remote_state,
