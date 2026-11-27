@@ -361,7 +361,27 @@ function playRow(i) {
   const list = viewTracks();
   if (!list[i]) return;
   if (v.name === 'queue') return playFrom(list, i, S.context || 'queue', null);
+  // like Spotify: a song picked from search results or history is followed by
+  // songs like it (Spotify's song radio), not by the other, unrelated results
+  if (v.kind === 'search' || v.name === 'recent') return playWithRadio(list[i]);
   playFrom(list, i, v.title, isReordered(v) ? null : contextOf(v));
+}
+
+let radioSeq = 0;
+async function playWithRadio(t) {
+  const seq = ++radioSeq;
+  // show it right away; the similar songs arrive a moment later
+  S.queue = [t];
+  S.index = 0;
+  setNow(t);
+  S.playing = true;
+  S.buffering = true;
+  renderPlayState();
+  let similar = [];
+  try { similar = (await invoke('song_radio', { id: t.id })).filter((x) => x.uri !== t.uri); } catch { /* just this song */ }
+  if (seq !== radioSeq) return; // something else was picked meanwhile
+  cacheTracks(similar);
+  playFrom([t, ...similar], 0, `${t.name} radio`, null);
 }
 
 function selectRow(i) {
