@@ -143,6 +143,7 @@ function render() {
   else if (v.name === 'list') main.innerHTML = listHtml(v);
   else if (v.name === 'queue') main.innerHTML = listHtml({ kind: 'queue', title: 'Up next', sub: S.context ? `playing from ${S.context}` : 'your queue', tracks: S.queue });
   else if (v.name === 'lyrics') main.innerHTML = lyricsViewHtml();
+  else if (v.name === 'artist') main.innerHTML = artistHtml(v);
   hydrateIcons(main);
   fitHeroTitle();
   updateSidebar();
@@ -277,32 +278,123 @@ function listHtml(v) {
   const cover = v.kind === 'liked'
     ? `<div class="list-cover liked-art">${icon('heart')}</div>`
     : `<img class="list-cover" src="${img(v.image || v.tracks?.[0]?.image)}" alt="">`;
-  const kinds = { liked: 'playlist', playlist: 'playlist', search: 'search', recent: 'history', queue: 'queue' };
-  const cur = current();
+  const kinds = { liked: 'playlist', playlist: 'playlist', search: 'search', recent: 'history', queue: 'queue', album: 'album', radio: 'song radio' };
   let body;
-  if (v.loading) body = `<div class="empty"><div class="spinner">${icon('sparkle')}</div>loading... ₍ᐢ. .ᐢ₎</div>`;
+  if (v.loading) body = loadingHtml();
   else if (!v.tracks?.length) body = `<div class="empty"><div class="big">(｡•́︿•̀｡)</div>nothing here yet~</div>`;
-  else body = `<div class="tracks">
-      <div class="trow head"><div class="tnum">#</div><div>title</div><div>album</div><div class="tdur">time</div></div>
-      ${v.tracks.map((t, i) => {
-        const playing = v.kind === 'queue' ? i === S.index : cur && cur.uri === t.uri;
-        return `<div class="trow ${playing ? 'playing' : ''}" data-index="${i}">
-          <div class="tnum">${playing ? '♪' : i + 1}</div>
-          <div class="tmain"><img src="${img(t.image)}" alt="" loading="lazy"><div class="ttext"><div class="tname">${esc(t.name)}</div><div class="tartist">${esc(t.artists)}</div></div></div>
-          <div class="talbum">${esc(t.album)}</div>
-          <div class="tdur">${fmt(t.duration_ms)}</div>
-        </div>`;
-      }).join('')}
-    </div>`;
+  else body = tracksHtml(v.tracks, v.kind, { album: v.kind !== 'album' });
   return `
     <div class="list-head">${cover}<div>
       <div class="list-kind">${kinds[v.kind] || ''}</div>
-      <h1 class="list-title" style="font-size:${v.title.length > 24 ? 40 : 60}px">${esc(v.title)}</h1>
-      <div class="list-meta">${esc(v.sub || '')}${v.tracks?.length ? ` · ${v.tracks.length} songs` : ''}</div>
+      <h1 class="list-title" style="font-size:${(v.title || '').length > 24 ? 40 : 60}px">${esc(v.title || '')}</h1>
+      <div class="list-meta">${v.subHtml || esc(v.sub || '')}${v.tracks?.length ? ` · ${v.tracks.length} songs` : ''}</div>
     </div></div>
     ${v.tracks?.length ? `<div class="list-actions"><button class="round-play" id="list-play" title="play">${icon('play')}</button>
       <button class="icon-btn" id="list-shuffle" title="shuffle play">${icon('shuffle')}</button></div>` : ''}
     ${body}`;
+}
+
+const loadingHtml = () => `<div class="empty"><div class="spinner">${icon('sparkle')}</div>loading... ₍ᐢ. .ᐢ₎</div>`;
+const sectionHead = (title) => `<div class="section-head"><h2>${esc(title)}</h2><div class="line">${icon('heart')}</div></div>`;
+
+// every artist name links to their page (older saved history has names only)
+function artistLinks(t) {
+  const list = t?.artist_list || [];
+  if (!list.length) return esc(t?.artists || '');
+  return list.map((a) => `<span class="alink" data-artist="${esc(a.uri)}">${esc(a.name)}</span>`).join(', ');
+}
+
+// the tracks behind the rows on screen (row data-index points into this)
+function viewTracks() {
+  return S.view.name === 'queue' ? S.queue : (S.view.tracks || []);
+}
+
+function likeButton(t, i) {
+  const saved = S.saved.has(t.id);
+  return `<button class="tlike ${saved ? 'on' : ''}" data-like="${i}" title="${saved ? 'remove from Liked Songs' : 'save to Liked Songs'}"><img class="ico art" src="art/icons/${saved ? 'liked' : 'add'}.png" alt="" draggable="false"></button>`;
+}
+
+function tracksHtml(tracks, kind, { album = true } = {}) {
+  const cur = current();
+  return `<div class="tracks ${album ? '' : 'no-album'}">
+    <div class="trow head"><div class="tnum">#</div><div>title</div>${album ? '<div>album</div>' : ''}<div></div><div class="tdur">time</div><div></div></div>
+    ${tracks.map((t, i) => {
+      const playing = kind === 'queue' ? i === S.index : cur && cur.uri === t.uri;
+      const albumCell = t.album_uri ? `<span class="alink" data-album="${esc(t.album_uri)}">${esc(t.album)}</span>` : esc(t.album || '');
+      return `<div class="trow ${playing ? 'playing' : ''}" data-index="${i}">
+        <div class="tnum">${playing ? '♪' : i + 1}</div>
+        <div class="tmain"><img src="${img(t.image)}" alt="" loading="lazy"><div class="ttext"><div class="tname">${esc(t.name)}</div><div class="tartist">${artistLinks(t)}</div></div></div>
+        ${album ? `<div class="talbum">${albumCell}</div>` : ''}
+        ${likeButton(t, i)}
+        <div class="tdur">${fmt(t.duration_ms)}</div>
+        <button class="tmore" data-more="${i}" title="more options for ${esc(t.name)}">${icon('dots')}</button>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+/* ───────────── artist & album pages ───────────── */
+
+async function openArtist(uri) {
+  if (!uri) return;
+  if (S.view.name === 'artist' && S.view.uri === uri) return;
+  const view = { name: 'artist', uri, loading: true, tracks: [] };
+  go(view);
+  try {
+    const a = await invoke('artist_page', { uri });
+    // (keep view.name: it says which page this is; the artist's name goes to title)
+    Object.assign(view, { image: a.image, top: a.top, albums: a.albums, singles: a.singles, loading: false, title: a.name, tracks: a.top });
+    cacheTracks(a.top);
+  } catch (e) { return fail(e); }
+  if (S.view === view) render();
+}
+
+async function openAlbum(uri) {
+  if (!uri) return;
+  if (S.view.kind === 'album' && S.view.uri === uri) return;
+  const view = { name: 'list', kind: 'album', uri, title: '', loading: true, tracks: null };
+  go(view);
+  try {
+    const al = await invoke('album_page', { uri });
+    cacheTracks(al.tracks);
+    Object.assign(view, {
+      title: al.name,
+      image: al.image,
+      subHtml: `${al.artists.map((a) => `<span class="alink" data-artist="${esc(a.uri)}">${esc(a.name)}</span>`).join(', ')}${al.year ? ` · ${al.year}` : ''}`,
+      sub: al.artists.map((a) => a.name).join(', '),
+      tracks: al.tracks,
+      loading: false,
+    });
+  } catch (e) { return fail(e); }
+  if (S.view === view) render();
+}
+
+async function openRadio(t) {
+  const view = { name: 'list', kind: 'radio', title: `${t.name} Radio`, sub: `songs like ${t.name} by ${t.artists}`, image: t.image_large || t.image, tracks: null, loading: true };
+  go(view);
+  try { view.tracks = await invoke('song_radio', { id: t.id }); cacheTracks(view.tracks); } catch (e) { return fail(e); }
+  view.loading = false;
+  if (S.view === view) render();
+}
+
+function artistHtml(v) {
+  if (v.loading) return loadingHtml();
+  const cards = (list) => list.map((al) => `<button class="card-item" data-album="${esc(al.uri)}">
+      <img class="cov" src="${al.image ? img(al.image) : PLACEHOLDER}" alt="" loading="lazy">
+      <div class="t">${esc(al.name)}</div>
+      <div class="st">${al.year || ''}</div>
+    </button>`).join('');
+  return `
+    <div class="list-head artist-head"><img class="list-cover artist-cover" src="${v.image ? img(v.image) : PLACEHOLDER}" alt=""><div>
+      <div class="list-kind">artist</div>
+      <h1 class="list-title" style="font-size:${v.title.length > 24 ? 40 : 60}px">${esc(v.title)}</h1>
+      <div class="list-meta">${[v.albums.length && `${v.albums.length} albums`, v.singles.length && `${v.singles.length} singles & EPs`].filter(Boolean).join(' · ')}</div>
+    </div></div>
+    ${v.top.length ? `<div class="list-actions"><button class="round-play" id="list-play" title="play ${esc(v.title)}">${icon('play')}</button>
+      <button class="icon-btn" id="list-shuffle" title="shuffle play">${icon('shuffle')}</button></div>` : ''}
+    ${v.top.length ? `${sectionHead('Popular')}${tracksHtml(v.top, 'artist')}` : ''}
+    ${v.albums.length ? `${sectionHead('Albums')}<div class="cards">${cards(v.albums)}</div>` : ''}
+    ${v.singles.length ? `${sectionHead('Singles and EPs')}<div class="cards">${cards(v.singles)}</div>` : ''}`;
 }
 
 function lyricsViewHtml() {
@@ -335,9 +427,10 @@ function renderNow() {
   $('right-cover').innerHTML = coverHtml;
   $('np-cover').innerHTML = t?.image ? `<img src="${esc(t.image)}" alt="">` : `<div class="cover-placeholder">${icon('heart')}</div>`;
   $('right-name').textContent = t ? t.name : 'nothing yet~';
-  $('right-artist').textContent = t ? t.artists : 'pick a song ♡';
+  $('right-artist').innerHTML = t ? artistLinks(t) : 'pick a song ♡';
   $('np-name').textContent = t ? t.name : '—';
-  $('np-artist').textContent = t ? t.artists : '';
+  $('np-artist').innerHTML = t ? artistLinks(t) : '';
+  for (const id of ['right-name', 'np-name']) $(id).classList.toggle('alink', !!t?.album_uri);
   renderDeviceInfo();
   document.title = t ? `${t.name} · ${t.artists} ♡` : 'Femboy Spotify';
   const saved = t && S.saved.has(t.id);
@@ -398,6 +491,7 @@ const NO_DEVICE = 'no-spotify-device';
 function contextOf(v) {
   if (v.kind === 'liked') return 'liked';
   if (v.kind === 'playlist') return `spotify:playlist:${v.id}`;
+  if (v.kind === 'album') return v.uri;
   // search results, history, queue: send the list itself
   // (Spotify answers 403 when a remote starts a "spotify:search:" context)
   return null;
@@ -562,6 +656,7 @@ function setNow(t) {
   S.now = t;
   S.index = S.queue.findIndex((x) => x.uri === t.uri);
   if (changed) {
+    checkSleepOnTrackChange(t.uri);
     S.lyrics = null;
     S.lyricsFor = null;
     if (t.uri.startsWith('spotify:track:')) remember(t);
@@ -741,18 +836,244 @@ async function checkPlayer() {
   } catch (e) { toast(`built-in player: ${e}`); }
 }
 
-async function saveCurrent() {
-  const t = current();
-  if (!t || !t.uri.startsWith('spotify:track:')) return;
-  if (S.saved.has(t.id)) return toast('already in your liked songs ♡');
-  try {
-    await invoke('save_track', { id: t.id });
-    S.saved.add(t.id);
-    if (S.liked) S.liked.unshift(t);
+const saveCurrent = () => toggleSaved(current());
+
+// Save to / remove from Liked Songs. The heart updates at once; Spotify confirms after.
+async function toggleSaved(t, want) {
+  if (!t?.id || !t.uri?.startsWith('spotify:track:')) return;
+  const save = want ?? !S.saved.has(t.id);
+  const apply = (on) => {
+    if (on) { S.saved.add(t.id); if (S.liked && !S.liked.some((x) => x.id === t.id)) S.liked.unshift(t); }
+    else { S.saved.delete(t.id); if (S.liked) S.liked = S.liked.filter((x) => x.id !== t.id); }
+    if (S.view.kind === 'liked') { S.view.tracks = S.liked; render(); } else refreshSavedMarks();
     renderNow();
-    toast('added to liked songs ♡');
-  } catch (e) { toast(`couldn't save: ${e}`); }
+  };
+  apply(save);
+  try {
+    await invoke('set_saved', { id: t.id, saved: save });
+    toast(save ? 'added to Liked Songs ♡' : 'removed from Liked Songs');
+  } catch (e) {
+    apply(!save);
+    toast(`couldn't update Liked Songs: ${e}`);
+  }
 }
+
+// swap the hearts on the rows on screen (with a little pop)
+function refreshSavedMarks() {
+  const list = viewTracks();
+  main.querySelectorAll('.tlike[data-like]').forEach((b) => {
+    const t = list[+b.dataset.like];
+    if (!t) return;
+    const on = S.saved.has(t.id);
+    if (b.classList.contains('on') === on) return;
+    b.classList.toggle('on', on);
+    b.dataset.tip = on ? 'remove from Liked Songs' : 'save to Liked Songs';
+    const im = b.querySelector('img');
+    im.src = `art/icons/${on ? 'liked' : 'add'}.png`;
+    im.classList.remove('pop'); void im.offsetWidth; im.classList.add('pop');
+  });
+}
+
+/* ───────────── song menu ("•••" / right click) ───────────── */
+
+const menuEl = document.createElement('div');
+menuEl.className = 'menu hidden';
+document.body.append(menuEl);
+const subEl = document.createElement('div');
+subEl.className = 'menu sub hidden';
+document.body.append(subEl);
+let menuItems = [];
+let menuOwner = null;
+
+function closeMenu() {
+  menuEl.classList.add('hidden');
+  subEl.classList.add('hidden');
+  menuOwner?.classList.remove('menu-open');
+  menuOwner = null;
+}
+
+function menuHtml(items) {
+  return items.map((it, i) => {
+    if (it === '-') return '<div class="menu-sep"></div>';
+    const pic = it.art ? `<img class="ico art" src="art/icons/${it.art}.png" alt="" draggable="false">` : it.icon ? icon(it.icon) : '<span class="ico"></span>';
+    return `<button class="menu-item ${it.sub ? 'has-sub' : ''} ${it.on ? 'on' : ''}" data-mi="${i}" ${it.disabled ? 'disabled' : ''}>
+      ${pic}<span class="mi-label">${esc(it.label)}</span>${it.sub ? icon('chevron-right', 'mi-arrow') : ''}</button>`;
+  }).join('');
+}
+
+// place a menu at a point (or next to an element), kept inside the window
+function placeMenu(el, x, y, { flipX = 0 } = {}) {
+  el.style.left = '0px';
+  el.style.top = '0px';
+  el.classList.remove('hidden');
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  let left = x;
+  if (left + w > innerWidth - 8) left = flipX ? flipX - w : innerWidth - w - 8;
+  const top = Math.max(8, Math.min(y, innerHeight - h - 8));
+  el.style.left = `${Math.max(8, left)}px`;
+  el.style.top = `${top}px`;
+}
+
+function showMenu(items, at, owner) {
+  closeMenu();
+  menuItems = items;
+  menuEl.innerHTML = menuHtml(items);
+  hydrateIcons(menuEl);
+  menuOwner = owner || null;
+  menuOwner?.classList.add('menu-open');
+  if (at instanceof Element) {
+    const r = at.getBoundingClientRect();
+    placeMenu(menuEl, r.right - 240, r.bottom + 6);
+  } else placeMenu(menuEl, at.x, at.y);
+  menuEl.classList.remove('open'); void menuEl.offsetWidth; menuEl.classList.add('open');
+}
+
+function openSub(btn, items) {
+  subEl.innerHTML = menuHtml(items);
+  subEl._items = items;
+  const r = btn.getBoundingClientRect();
+  placeMenu(subEl, r.right + 4, r.top - 6, { flipX: r.left - 4 });
+  subEl.classList.remove('open'); void subEl.offsetWidth; subEl.classList.add('open');
+}
+
+function runItem(it, btn) {
+  if (!it || it === '-' || it.disabled) return;
+  if (it.sub) return openSub(btn, typeof it.sub === 'function' ? it.sub() : it.sub);
+  closeMenu();
+  it.run?.();
+}
+menuEl.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mi]');
+  if (b) runItem(menuItems[+b.dataset.mi], b);
+});
+menuEl.addEventListener('mouseover', (e) => {
+  const b = e.target.closest('[data-mi]');
+  if (!b) return;
+  const it = menuItems[+b.dataset.mi];
+  if (it?.sub) openSub(b, typeof it.sub === 'function' ? it.sub() : it.sub);
+  else subEl.classList.add('hidden');
+});
+subEl.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mi]');
+  if (b) runItem(subEl._items[+b.dataset.mi], b);
+});
+document.addEventListener('mousedown', (e) => {
+  if (!e.target.closest('.menu')) closeMenu();
+}, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+window.addEventListener('blur', closeMenu);
+window.addEventListener('resize', closeMenu);
+main.addEventListener('scroll', closeMenu, { passive: true });
+
+async function copyText(text, what) {
+  try { await navigator.clipboard.writeText(text); toast(`${what} copied ♡`); } catch { toast(`couldn't copy the ${what}`); }
+}
+
+function openTrackMenu(t, at, { index = -1, owner } = {}) {
+  if (!t?.uri?.startsWith('spotify:track:')) return;
+  const v = S.view;
+  const mine = S.playlists.filter((p) => p.editable);
+  const inMyPlaylist = v.kind === 'playlist' && mine.some((p) => p.id === v.id);
+  const saved = S.saved.has(t.id);
+  const artists = t.artist_list || [];
+  const link = `https://open.spotify.com/track/${t.id}`;
+  const items = [
+    { icon: 'plus', label: 'Add to playlist', sub: () => (mine.length ? mine.map((p) => ({ label: p.name, run: () => addToPlaylist(p, t) })) : [{ label: 'no playlists you can edit yet', disabled: true }]) },
+    inMyPlaylist && { icon: 'minus', label: 'Remove from this playlist', run: () => removeFromPlaylist(v, t, index) },
+    { art: saved ? 'unlike' : 'add', label: saved ? 'Remove from Liked Songs' : 'Save to Liked Songs', run: () => toggleSaved(t, !saved) },
+    { icon: 'queue', label: 'Add to queue', run: () => addToQueue(t) },
+    { icon: 'timer', label: sleep.until || sleep.endOfTrack ? `Sleep timer (${sleepLabel()})` : 'Sleep timer', sub: sleepItems },
+    '-',
+    { icon: 'radio', label: 'Go to song radio', run: () => openRadio(t) },
+    artists.length > 1
+      ? { icon: 'user', label: 'Go to artist', sub: artists.map((a) => ({ label: a.name, run: () => openArtist(a.uri) })) }
+      : { icon: 'user', label: 'Go to artist', disabled: !artists.length, run: () => openArtist(artists[0]?.uri) },
+    { icon: 'disc', label: 'Go to album', disabled: !t.album_uri, run: () => openAlbum(t.album_uri) },
+    '-',
+    { icon: 'share', label: 'Share', sub: [
+      { icon: 'link', label: 'Copy song link', run: () => copyText(link, 'song link') },
+      { icon: 'link', label: 'Copy Spotify URI', run: () => copyText(t.uri, 'Spotify URI') },
+    ] },
+  ].filter(Boolean);
+  const row = owner || (index >= 0 ? main.querySelector(`.trow[data-index="${index}"]`) : null);
+  showMenu(items, at, row);
+}
+
+async function addToPlaylist(p, t) {
+  try {
+    await invoke('playlist_add', { playlist: p.id, uri: t.uri });
+    p.total = (p.total || 0) + 1;
+    if (S.view.kind === 'playlist' && S.view.id === p.id && S.view.tracks) { S.view.tracks.push(t); render(); }
+    toast(`added to ${p.name} ♡`);
+  } catch (e) { toast(`couldn't add it: ${e}`); }
+}
+
+async function removeFromPlaylist(v, t, index) {
+  try {
+    await invoke('playlist_remove', { playlist: v.id, uri: t.uri });
+    const p = S.playlists.find((x) => x.id === v.id);
+    if (v.tracks) {
+      const before = v.tracks.length;
+      v.tracks = v.tracks.filter((x) => x.uri !== t.uri);
+      if (p) p.total = Math.max(0, (p.total || before) - (before - v.tracks.length));
+    }
+    if (S.view === v) render();
+    toast(`removed from ${v.title}`);
+  } catch (e) { toast(`couldn't remove it: ${e}`); }
+}
+
+async function addToQueue(t) {
+  try {
+    await invoke('add_to_queue', { uri: t.uri });
+    cacheTracks([t]);
+    toast('added to queue ♪');
+  } catch (e) { handleRemoteError(e); }
+}
+
+/* sleep timer: pause after some minutes, or when this song ends */
+const sleep = { timer: 0, until: 0, endOfTrack: null };
+function sleepLabel() {
+  if (sleep.endOfTrack) return 'end of song';
+  const left = Math.max(0, Math.round((sleep.until - Date.now()) / 60000));
+  return left ? `${left} min left` : 'less than a minute';
+}
+function clearSleep() {
+  clearTimeout(sleep.timer);
+  Object.assign(sleep, { timer: 0, until: 0, endOfTrack: null });
+}
+function setSleep(min) {
+  clearSleep();
+  if (min === 'end') {
+    sleep.endOfTrack = current()?.uri || null;
+    toast('music stops when this song ends ☾');
+    return;
+  }
+  sleep.until = Date.now() + min * 60000;
+  sleep.timer = setTimeout(() => { clearSleep(); if (S.playing) control('pause'); toast('sleep timer: good night ☾'); }, min * 60000);
+  toast(`music stops in ${min >= 60 ? `${min / 60} hour` : `${min} minutes`} ☾`);
+}
+function sleepItems() {
+  const items = [5, 10, 15, 30, 45, 60].map((m) => ({ label: m === 60 ? '1 hour' : `${m} minutes`, run: () => setSleep(m) }));
+  items.push({ label: 'End of song', run: () => setSleep('end') });
+  if (sleep.until || sleep.endOfTrack) items.push('-', { label: 'Turn off timer', run: () => { clearSleep(); toast('sleep timer off'); } });
+  return items;
+}
+// "end of song": pause as soon as the next one starts
+function checkSleepOnTrackChange(uri) {
+  if (sleep.endOfTrack && uri !== sleep.endOfTrack) {
+    clearSleep();
+    control('pause');
+    toast('sleep timer: good night ☾');
+  }
+}
+
+main.addEventListener('contextmenu', (e) => {
+  const row = e.target.closest('.trow[data-index]');
+  if (!row) return;
+  e.preventDefault();
+  openTrackMenu(viewTracks()[+row.dataset.index], { x: e.clientX, y: e.clientY }, { index: +row.dataset.index });
+});
 
 /* ───────────── lyrics ───────────── */
 
@@ -845,8 +1166,12 @@ bindBar($('vol-bar'), (r) => setVolume(r * 100, { live: true }), (r) => setVolum
 
 // clicks inside the main panel (event delegation)
 main.addEventListener('click', (e) => {
-  const el = e.target.closest('[data-filter],[data-open],[data-playlist],[data-index],[data-line],#hero-play,#hero-edit,#list-play,#list-shuffle');
+  const el = e.target.closest('[data-artist],[data-album],[data-like],[data-more],[data-filter],[data-open],[data-playlist],[data-index],[data-line],#hero-play,#hero-edit,#list-play,#list-shuffle');
   if (!el) return;
+  if (el.dataset.artist) return openArtist(el.dataset.artist);
+  if (el.dataset.album) return openAlbum(el.dataset.album);
+  if (el.dataset.like !== undefined) return toggleSaved(viewTracks()[+el.dataset.like]);
+  if (el.dataset.more !== undefined) return openTrackMenu(viewTracks()[+el.dataset.more], el, { index: +el.dataset.more });
   if (el.dataset.filter) {
     const f = el.dataset.filter;
     if (f === 'liked') return openLiked();
@@ -995,6 +1320,18 @@ $('btn-mute').onclick = () => {
 };
 $('right-add').onclick = saveCurrent;
 $('np-add').onclick = saveCurrent;
+// now playing: artist names open the artist, the song name opens its album,
+// right click gives the same song menu as in lists
+for (const id of ['np-artist', 'right-artist']) {
+  $(id).addEventListener('click', (e) => { const a = e.target.closest('[data-artist]'); if (a) openArtist(a.dataset.artist); });
+}
+for (const id of ['np-name', 'right-name']) $(id).addEventListener('click', () => openAlbum(current()?.album_uri));
+for (const sel of ['.np', '.right-meta']) {
+  document.querySelector(sel).addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    openTrackMenu(current(), { x: e.clientX, y: e.clientY });
+  });
+}
 $('btn-lyrics').onclick = () => (S.view.name === 'lyrics' ? goBack() : go({ name: 'lyrics' }));
 $('lyrics-open').onclick = () => go({ name: 'lyrics' });
 $('btn-queue').onclick = () => (S.view.name === 'queue' ? goBack() : go({ name: 'queue' }));
@@ -1247,7 +1584,7 @@ function demoCover(seed, label) {
 const DEMO_PLAYLISTS = ['Boykisser Mix', 'DJ', 'Meme Mix', 'onokami Mix', 'Spit It Out', 'LEGACY Radio', 'Shluzov Mix', 'Daily Mix 1', 'pink noise', 'sleepy girl hours', 'gym but cute', 'night drive ✧', 'hyperpop', 'study ♡']
   .map((name, i) => ({ id: 'pl' + i, name, owner: 'cutie', total: 20 + i * 7, image: demoCover(i, '') }));
 const DEMO_TRACKS = [['MURDER EVERY 1 U KNOW!', 'femtanyl, takihasdied', 101000], ['strawberry milk', 'pastel kid', 184000], ['heart.exe', 'glitchbunny', 152000], ['pink sky', 'lavender', 201000], ['catboy summer', 'meowmix', 176000], ['sugar rush', 'candycore', 143000], ['blåhaj', 'shark gang', 165000], ['skirt season', 'thigh highs', 199000]]
-  .map(([name, artists, d], i) => ({ id: 't' + i, uri: 'spotify:track:t' + i, name, artists, album: 'cute album vol. ' + (i % 3 + 1), duration_ms: d, image: demoCover(i + 2, ''), image_large: demoCover(i + 2, '') }));
+  .map(([name, artists, d], i) => ({ id: 't' + i, uri: 'spotify:track:t' + i, name, artists, artist_list: artists.split(', ').map((a) => ({ name: a, uri: 'spotify:artist:' + a.replace(/\W/g, '') })), album: 'cute album vol. ' + (i % 3 + 1), album_uri: 'spotify:album:a' + (i % 3 + 1), duration_ms: d, image: demoCover(i + 2, ''), image_large: demoCover(i + 2, '') }));
 // `var`-free on purpose: listen() runs before this part of the file is evaluated
 function demoListen(ev, cb) { (demoListen.cbs ||= []).push([ev, cb]); }
 function demoEmit(payload, ev = 'remote') { setTimeout(() => (demoListen.cbs || []).forEach(([e, cb]) => e === ev && cb(payload)), 250); }
@@ -1264,6 +1601,10 @@ async function demoInvoke(cmd, args = {}) {
     case 'lyrics': return [{ start_ms: 0, words: 'this is a demo, no real lyrics here' }, { start_ms: 4000, words: 'log in with Spotify to hear the music' }, { start_ms: 8000, words: 'pink pink pink ♡' }, { start_ms: 12000, words: 'la la la~' }];
     // a pretend Spotify Connect device
     case 'remote_state': case 'refresh_devices': return demoState();
+    case 'artist_page': return { uri: args.uri, name: 'pastel kid', image: demoCover(5, ''), top: DEMO_TRACKS.slice(0, 5), albums: [1, 2].map((n) => ({ uri: 'spotify:album:a' + n, name: `cute album vol. ${n}`, year: 2026 - n, image: demoCover(n, '') })), singles: [{ uri: 'spotify:album:s1', name: 'strawberry milk', year: 2026, image: demoCover(3, '') }] };
+    case 'album_page': return { uri: args.uri, name: 'cute album vol. 1', artists: [{ name: 'pastel kid', uri: 'spotify:artist:demo' }], year: 2025, image: demoCover(1, ''), tracks: DEMO_TRACKS.slice(0, 4) };
+    case 'song_radio': return DEMO_TRACKS.slice().reverse();
+    case 'set_saved': case 'playlist_add': case 'playlist_remove': case 'add_to_queue': return null;
     case 'spotify_home': return [
       { title: 'Made For cutie', items: ['Daily Mix 1', 'Daily Mix 2', 'Release Radar', 'Discover Weekly'].map((n, i) => ({ id: 'mix' + i, name: n, sub: 'cute songs, mixed for you', image: '' })) },
       { title: 'Your top mixes', items: ['Hyperpop Mix', 'Pastel Mix', 'Night Mix'].map((n, i) => ({ id: 'top' + i, name: n, sub: 'Spotify', image: '' })) },

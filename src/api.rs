@@ -9,14 +9,14 @@ use std::collections::HashMap;
 use anyhow::{Context, Result, anyhow};
 use futures_util::{StreamExt, stream};
 use librespot::core::{SpotifyId, SpotifyUri, session::Session};
-use librespot::metadata::{Lyrics, Metadata, Track as LsTrack};
+use librespot::metadata::{Album as LsAlbum, Artist as LsArtist, Lyrics, Metadata, Track as LsTrack};
 use librespot::protocol::{
     extended_metadata::{BatchedEntityRequest, EntityRequest, ExtensionQuery},
     extension_kind::ExtensionKind,
     metadata::Track as TrackProto,
-    playlist4_external::SelectedListContent,
+    playlist4_external::{Add, ChangeInfo, Delta, Item, ListChanges, Op, Rem, SelectedListContent, op},
 };
-use protobuf::{EnumOrUnknown, Message};
+use protobuf::{EnumOrUnknown, Message, MessageField};
 use reqwest::Method;
 use serde::Serialize;
 use serde_json::Value;
@@ -40,6 +40,46 @@ pub struct Track {
     pub image: Option<String>,
     /// largest cover
     pub image_large: Option<String>,
+    /// every artist with their "spotify:artist:…" uri (each name links to an artist page)
+    pub artist_list: Vec<ArtistRef>,
+    /// e.g. "spotify:album:…" (for "Go to album")
+    pub album_uri: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ArtistRef {
+    pub name: String,
+    pub uri: String,
+}
+
+/// An album or single on an artist page.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct AlbumCard {
+    pub uri: String,
+    pub name: String,
+    pub year: i32,
+    pub image: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ArtistPage {
+    pub uri: String,
+    pub name: String,
+    pub image: Option<String>,
+    /// popular tracks
+    pub top: Vec<Track>,
+    pub albums: Vec<AlbumCard>,
+    pub singles: Vec<AlbumCard>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct AlbumPage {
+    pub uri: String,
+    pub name: String,
+    pub artists: Vec<ArtistRef>,
+    pub year: i32,
+    pub image: Option<String>,
+    pub tracks: Vec<Track>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -49,6 +89,8 @@ pub struct Playlist {
     pub owner: String,
     pub total: u64,
     pub image: Option<String>,
+    /// yours, or shared with you for editing (songs can be added / removed)
+    pub editable: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -299,6 +341,7 @@ impl Api {
                     },
                     total: pl.length().max(0) as u64,
                     image,
+                    editable: owner == me || pl.capabilities.can_edit_items(),
                 },
             ));
         }
@@ -326,8 +369,181 @@ impl Api {
         self.tracks(&uris).await
     }
 
+    /// Tracks of any context Spotify can resolve: an album, an artist (their top
+    /// tracks), a song radio ("spotify:station:track:…").
+    pub async fn context_tracks(&self, uri: &str, limit: usize) -> Result<Vec<Track>> {
+        let uris = self.context_uris(uri, limit.min(MAX_ITEMS)).await?;
+        self.tracks(&uris).await
+    }
+
+    /// An artist page: popular tracks, albums and singles.
+    pub async fn artist(&self, uri: &str) -> Result<ArtistPage> {
+        let id = SpotifyUri::from_uri(uri).map_err(|e| anyhow!("bad artist: {e}"))?;
+        let a = LsArtist::get(&self.session, &id)
+            .await
+            .map_err(|e| anyhow!("could not load the artist: {e}"))?;
+        let top_uris: Vec<String> = a
+            .top_tracks
+            .for_country(&self.session.country())
+            .0
+            .iter()
+            .filter_map(|u| u.to_uri().ok())
+            .collect();
+        let top = if top_uris.is_empty() {
+            self.context_tracks(uri, 10).await.unwrap_or_default()
+        } else {
+            self.tracks(&top_uris).await?
+        };
+        // each group lists versions of one release; the first is the main one
+        let firsts = |groups: &librespot::metadata::artist::AlbumGroups| -> Vec<SpotifyUri> {
+            groups.0.iter().filter_map(|g| g.0.0.first().cloned()).take(40).collect()
+        };
+        let albums = self.album_cards(firsts(&a.albums)).await;
+        let singles = self.album_cards(firsts(&a.singles)).await;
+        let image = best_image(&a.portraits)
+            .or_else(|| best_image(&a.portrait_group))
+            .or_else(|| albums.first().and_then(|al| al.image.clone()))
+            .or_else(|| top.first().and_then(|t| t.image_large.clone()));
+        Ok(ArtistPage { uri: uri.to_string(), name: a.name, image, top, albums, singles })
+    }
+
+    async fn album_cards(&self, ids: Vec<SpotifyUri>) -> Vec<AlbumCard> {
+        let session = self.session.clone();
+        let mut cards: Vec<AlbumCard> = stream::iter(ids)
+            .map(move |id| {
+                let session = session.clone();
+                async move {
+                    let al = LsAlbum::get(&session, &id).await.ok()?;
+                    Some(AlbumCard {
+                        uri: id.to_uri().ok()?,
+                        name: al.name,
+                        year: al.date.year(),
+                        image: best_image(&al.covers),
+                    })
+                }
+            })
+            .buffered(8)
+            .filter_map(|c| async move { c })
+            .collect()
+            .await;
+        cards.sort_by(|a, b| b.year.cmp(&a.year)); // newest first, like Spotify
+        cards
+    }
+
+    /// An album with all its tracks in order.
+    pub async fn album(&self, uri: &str) -> Result<AlbumPage> {
+        let id = SpotifyUri::from_uri(uri).map_err(|e| anyhow!("bad album: {e}"))?;
+        let al = LsAlbum::get(&self.session, &id)
+            .await
+            .map_err(|e| anyhow!("could not load the album: {e}"))?;
+        let uris: Vec<String> = al
+            .discs
+            .0
+            .iter()
+            .flat_map(|d| d.tracks.0.iter())
+            .filter_map(|u| u.to_uri().ok())
+            .collect();
+        let tracks = self.tracks(&uris).await?;
+        Ok(AlbumPage {
+            uri: uri.to_string(),
+            name: al.name,
+            artists: artist_refs(&al.artists),
+            year: al.date.year(),
+            image: best_image(&al.covers),
+            tracks,
+        })
+    }
+
+    /// Adds a track to the end of one of your playlists.
+    pub async fn playlist_add(&self, playlist_id: &str, track_uri: &str) -> Result<()> {
+        let op = Op {
+            kind: Some(EnumOrUnknown::new(op::Kind::ADD)),
+            add: MessageField::some(Add {
+                items: vec![Item { uri: Some(track_uri.to_string()), ..Default::default() }],
+                add_last: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        self.playlist_change(playlist_id, op).await
+    }
+
+    /// Removes every copy of a track from one of your playlists.
+    pub async fn playlist_remove(&self, playlist_id: &str, track_uri: &str) -> Result<()> {
+        let pl = self.playlist_raw(playlist_id).await?;
+        // remove from the end so earlier indexes stay valid
+        let positions: Vec<usize> = pl
+            .contents
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, i)| i.uri() == track_uri)
+            .map(|(n, _)| n)
+            .rev()
+            .collect();
+        if positions.is_empty() {
+            return Ok(());
+        }
+        for n in positions {
+            let op = Op {
+                kind: Some(EnumOrUnknown::new(op::Kind::REM)),
+                rem: MessageField::some(Rem {
+                    from_index: Some(n as i32),
+                    length: Some(1),
+                    items: vec![Item { uri: Some(track_uri.to_string()), ..Default::default() }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            self.playlist_change(playlist_id, op).await?;
+        }
+        Ok(())
+    }
+
+    /// Sends one change to a playlist, based on its current revision (like the official app).
+    async fn playlist_change(&self, playlist_id: &str, op: Op) -> Result<()> {
+        let pl = self.playlist_raw(playlist_id).await?;
+        let revision = pl.revision().to_vec();
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let changes = ListChanges {
+            base_revision: Some(revision.clone()),
+            deltas: vec![Delta {
+                base_version: Some(revision),
+                ops: vec![op],
+                info: MessageField::some(ChangeInfo {
+                    user: Some(self.session.username()),
+                    timestamp: Some(now_ms),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }],
+            want_resulting_revisions: Some(true),
+            ..Default::default()
+        };
+        let body = changes.write_to_bytes()?;
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/x-protobuf"),
+        );
+        self.session
+            .spclient()
+            .request(&Method::POST, &format!("/playlist/v2/playlist/{playlist_id}/changes"), Some(headers), Some(&body))
+            .await
+            .map_err(|e| anyhow!("Spotify did not accept the playlist change: {e}"))?;
+        Ok(())
+    }
+
     /// Adds a track to Liked Songs (collection v2 write, protobuf encoded by hand).
     pub async fn save_track(&self, id: &str) -> Result<()> {
+        self.set_saved(id, true).await
+    }
+
+    /// Adds a track to Liked Songs, or removes it (`saved == false`).
+    pub async fn set_saved(&self, id: &str, saved: bool) -> Result<()> {
         let user = self.session.username();
         let added_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -336,6 +552,9 @@ impl Api {
         let mut item = Vec::new();
         pb_string(&mut item, 1, &format!("spotify:track:{id}"));
         pb_varint_field(&mut item, 2, added_at);
+        if !saved {
+            pb_varint_field(&mut item, 3, 1); // is_removed
+        }
         let mut body = Vec::new();
         pb_string(&mut body, 1, &user);
         pb_string(&mut body, 2, "collection");
@@ -411,7 +630,27 @@ fn convert_track(uri: &str, t: &LsTrack) -> Track {
         duration_ms: t.duration.max(0) as u64,
         image: pick(300),
         image_large: pick(640),
+        artist_list: artist_refs(&t.artists),
+        album_uri: t.album.id.to_uri().ok(),
     }
+}
+
+fn artist_refs(artists: &librespot::metadata::artist::Artists) -> Vec<ArtistRef> {
+    artists
+        .0
+        .iter()
+        .filter_map(|a| Some(ArtistRef { name: a.name.clone(), uri: a.id.to_uri().ok()? }))
+        .collect()
+}
+
+/// Largest picture of a set, as an image URL.
+fn best_image(images: &librespot::metadata::image::Images) -> Option<String> {
+    images
+        .0
+        .iter()
+        .max_by_key(|i| i.width)
+        .and_then(|i| i.id.to_base16().ok())
+        .map(|h| image_url(&h))
 }
 
 // ---- minimal protobuf encoding for the collection write ----

@@ -53,3 +53,53 @@ async fn library_loads_for_saved_login() {
         println!("lyrics for '{}': {:?} lines", tr.name, ly.map(|l| l.len()));
     }
 }
+
+/// Artist page, album page and song radio for the first liked song (read-only).
+#[tokio::test]
+#[ignore]
+async fn artist_album_radio_load() {
+    auth::init_runtime();
+    let login = auth::connect_cached().await.unwrap().expect("no saved login");
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let api = Api::new(&login);
+    let liked = api.liked().await.unwrap();
+    let tr = liked.first().expect("no liked songs");
+    println!("song: {} — artists {:?} album {:?}", tr.name, tr.artist_list.iter().map(|a| &a.name).collect::<Vec<_>>(), tr.album_uri);
+
+    let t = Instant::now();
+    let artist = api.artist(&tr.artist_list[0].uri).await.unwrap();
+    println!("artist '{}' in {:?}: image={} top={} albums={} singles={}", artist.name, t.elapsed(), artist.image.is_some(), artist.top.len(), artist.albums.len(), artist.singles.len());
+    for s in artist.top.iter().take(3) { println!("  top: {}", s.name); }
+    for a in artist.singles.iter().chain(artist.albums.iter()).take(3) { println!("  release: {} ({}) img={}", a.name, a.year, a.image.is_some()); }
+    assert!(!artist.top.is_empty() || !artist.singles.is_empty() || !artist.albums.is_empty());
+
+    let t = Instant::now();
+    let album = api.album(tr.album_uri.as_deref().unwrap()).await.unwrap();
+    println!("album '{}' ({}) in {:?}: {} tracks img={}", album.name, album.year, t.elapsed(), album.tracks.len(), album.image.is_some());
+    assert!(!album.tracks.is_empty());
+
+    let t = Instant::now();
+    match api.context_tracks(&format!("spotify:station:track:{}", tr.id), 100).await {
+        Ok(r) => println!("radio: {} tracks in {:?}, first: {:?}", r.len(), t.elapsed(), r.first().map(|x| &x.name)),
+        Err(e) => println!("radio failed: {e:#}"),
+    }
+}
+
+/// What owner names look like next to our own username (read-only).
+#[tokio::test]
+#[ignore]
+async fn playlist_owner_names() {
+    use librespot::protocol::playlist4_external::SelectedListContent;
+    use protobuf::Message;
+    auth::init_runtime();
+    let login = auth::connect_cached().await.unwrap().expect("no saved login");
+    let s = &login.session;
+    println!("session username: {:?}", s.username());
+    let root = SelectedListContent::parse_from_bytes(&s.spclient().get_rootlist(0, Some(20)).await.unwrap()).unwrap();
+    for item in root.contents.items.iter().take(6) {
+        let Some(id) = item.uri().strip_prefix("spotify:playlist:") else { continue };
+        let sid = librespot::core::SpotifyId::from_base62(id).unwrap();
+        let pl = SelectedListContent::parse_from_bytes(&s.spclient().get_playlist(&sid).await.unwrap()).unwrap();
+        println!("{:<30} owner={:?} can_edit={:?}", pl.attributes.name(), pl.owner_username(), pl.abuse_reporting_enabled);
+    }
+}

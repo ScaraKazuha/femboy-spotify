@@ -29,6 +29,14 @@ const ICONS = {
   'repeat-one': '<path d="M4 11.5v-1.5a3.5 3.5 0 0 1 3.5-3.5H19M16 3.5l3 3-3 3M20 12.5V14a3.5 3.5 0 0 1-3.5 3.5H5M8 20.5l-3-3 3-3"/><path d="M11.3 10.3l1.2-.8v5" stroke-width="1.8"/>',
   disc: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.6"/>',
   pen: '<path d="M14.5 4.5l5 5L9 20H4v-5z"/><path d="M12.5 6.5l5 5"/>',
+  // song menu
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  timer: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M9.5 2.5h5M18.5 6l1.5-1.5"/>',
+  radio: '<circle cx="12" cy="12" r="2.2" fill="currentColor"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.2-4 4-6 7.5-6s6.3 2 7.5 6"/>',
+  share: '<path d="M12 3.5v11M7.5 8 12 3.5 16.5 8"/><path d="M5 12.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-6.5"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3.6-3.6a4 4 0 0 0-5.7-5.7L12 6.3"/><path d="M14 10a4 4 0 0 0-5.7 0l-3.6 3.6a4 4 0 0 0 5.7 5.7L12 17.7"/>',
   // now playing view: a screen with a play triangle, like Spotify's
   np: '<rect x="3" y="4" width="18" height="16" rx="3"/><path fill="currentColor" stroke="none" d="M9.6 8.7v6.6a.7.7 0 0 0 1.1.6l5-3.3a.7.7 0 0 0 0-1.2l-5-3.3a.7.7 0 0 0-1.1.6z"/>',
   // lyrics: a tilted microphone like Spotify's
@@ -97,4 +105,4 @@ function setIcon(el, name) {
 }
 
 // load every button picture up front so swaps never flash empty
-Object.values(ART).forEach((f) => { const i = new Image(); i.src = `art/icons/${f}.png`; });
+[...Object.values(ART), 'unlike'].forEach((f) => { const i = new Image(); i.src = `art/icons/${f}.png`; });

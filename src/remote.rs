@@ -382,6 +382,18 @@ impl Remote {
         self.command(device, cmd).await
     }
 
+    /// Puts a track in the play queue (after the current song).
+    pub async fn add_to_queue(&self, track_uri: &str) -> Result<()> {
+        self.command(
+            None,
+            json!({
+                "endpoint": "add_to_queue",
+                "track": { "uri": track_uri, "metadata": { "is_queued": "true" }, "provider": "queue" },
+            }),
+        )
+        .await
+    }
+
     pub async fn simple(&self, endpoint: &str) -> Result<()> {
         self.command(None, json!({ "endpoint": endpoint })).await
     }

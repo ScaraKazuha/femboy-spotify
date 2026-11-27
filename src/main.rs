@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use femboy_spotify::{
-    api::{Api, LyricLine, Me, Playlist, Track, encode_query},
+    api::{AlbumPage, Api, ArtistPage, LyricLine, Me, Playlist, Track, encode_query},
     auth::{self, Login},
     remote::{Remote, RemoteState},
 };
@@ -161,6 +161,49 @@ async fn track_info(state: State<'_, AppState>, uri: String) -> CmdResult<Option
 #[tauri::command]
 async fn save_track(state: State<'_, AppState>, id: String) -> CmdResult<()> {
     state.core().await?.api.save_track(&id).await.map_err(err)
+}
+
+/// Adds to (`saved`) or removes from Liked Songs.
+#[tauri::command]
+async fn set_saved(state: State<'_, AppState>, id: String, saved: bool) -> CmdResult<()> {
+    state.core().await?.api.set_saved(&id, saved).await.map_err(err)
+}
+
+#[tauri::command]
+async fn artist_page(state: State<'_, AppState>, uri: String) -> CmdResult<ArtistPage> {
+    state.core().await?.api.artist(&uri).await.map_err(err)
+}
+
+#[tauri::command]
+async fn album_page(state: State<'_, AppState>, uri: String) -> CmdResult<AlbumPage> {
+    state.core().await?.api.album(&uri).await.map_err(err)
+}
+
+/// Song radio: tracks of the station seeded by one song.
+#[tauri::command]
+async fn song_radio(state: State<'_, AppState>, id: String) -> CmdResult<Vec<Track>> {
+    state
+        .core()
+        .await?
+        .api
+        .context_tracks(&format!("spotify:station:track:{id}"), 100)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn playlist_add(state: State<'_, AppState>, playlist: String, uri: String) -> CmdResult<()> {
+    state.core().await?.api.playlist_add(&playlist, &uri).await.map_err(err)
+}
+
+#[tauri::command]
+async fn playlist_remove(state: State<'_, AppState>, playlist: String, uri: String) -> CmdResult<()> {
+    state.core().await?.api.playlist_remove(&playlist, &uri).await.map_err(err)
+}
+
+#[tauri::command]
+async fn add_to_queue(state: State<'_, AppState>, uri: String) -> CmdResult<()> {
+    state.core().await?.remote.add_to_queue(&uri).await.map_err(err)
 }
 
 #[tauri::command]
@@ -581,7 +624,26 @@ async fn install_update(app: AppHandle) -> CmdResult<()> {
     app.restart();
 }
 
+/// Tells Windows which app this process is. The installer's Start-menu shortcut carries
+/// the same AppUserModelID, so the taskbar ties our window to it and shows its icon
+/// (otherwise Explorer may keep a stale blank icon for the exe path after an update).
+#[cfg(windows)]
+fn set_app_id() {
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn SetCurrentProcessExplicitAppUserModelID(id: *const u16) -> i32;
+    }
+    let id: Vec<u16> = "dev.scarakazuha.femboyspotify".encode_utf16().chain([0]).collect();
+    unsafe {
+        SetCurrentProcessExplicitAppUserModelID(id.as_ptr());
+    }
+}
+
+#[cfg(not(windows))]
+fn set_app_id() {}
+
 fn main() {
+    set_app_id();
     auth::init_runtime();
     auth::init_file_log();
     log_line(concat!("femboy spotify ", env!("CARGO_PKG_VERSION"), " started"));
@@ -644,6 +706,13 @@ fn main() {
             search,
             track_info,
             save_track,
+            set_saved,
+            artist_page,
+            album_page,
+            song_radio,
+            playlist_add,
+            playlist_remove,
+            add_to_queue,
             lyrics,
             remote_state,
             refresh_devices,
