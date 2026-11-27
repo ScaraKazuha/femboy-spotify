@@ -405,6 +405,45 @@ impl Remote {
         .await
     }
 
+    /// The current and upcoming tracks as Spotify describes them (uri, provider,
+    /// metadata), for looking into special items such as DJ voice segments.
+    pub fn debug_tracks(&self) -> Vec<(String, String, Vec<(String, String)>)> {
+        let guard = self.cluster.lock().unwrap();
+        let Some(p) = guard.as_ref().and_then(|c| c.player_state.as_ref()) else { return vec![] };
+        p.track
+            .iter()
+            .chain(p.next_tracks.iter())
+            .take(12)
+            .map(|t| {
+                let mut md: Vec<(String, String)> = t.metadata.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                md.sort();
+                (t.uri.clone(), t.provider.clone(), md)
+            })
+            .collect()
+    }
+
+    /// DJ "switch it up": jump to the start of the DJ's next block (a new vibe).
+    /// Spotify marks those starts with `jump_track` in the queue; without one we
+    /// just go to the next song.
+    pub async fn dj_switch(&self) -> Result<()> {
+        let target = {
+            let guard = self.cluster.lock().unwrap();
+            guard
+                .as_ref()
+                .and_then(|c| c.player_state.as_ref())
+                .and_then(|p| {
+                    p.next_tracks
+                        .iter()
+                        .find(|t| t.metadata.get("jump_track").is_some_and(|v| v == "true"))
+                        .map(|t| json!({ "uri": t.uri, "uid": t.uid }))
+                })
+        };
+        match target {
+            Some(track) => self.command(None, json!({ "endpoint": "skip_next", "track": track })).await,
+            None => self.simple("skip_next").await,
+        }
+    }
+
     /// Drops the songs you queued yourself; the rest of the context keeps playing.
     pub async fn clear_queue(&self) -> Result<()> {
         let (next, prev, revision) = {

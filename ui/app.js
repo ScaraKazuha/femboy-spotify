@@ -1736,8 +1736,8 @@ $('btn-np').onclick = () => {
 $('btn-panel').onclick = () => {
   if (!S.djOn) return playDJ();
   if (!S.playing) return togglePlay();
-  toast('DJ X is switching it up ♪');
-  control('skip_next');
+  toast('DJ X is switching up the vibe ♪');
+  invoke('dj_switch').catch(handleRemoteError);
 };
 $('btn-mini').onclick = () => $('btn-np').click();
 $('btn-full').onclick = async () => {
@@ -1996,7 +1996,7 @@ async function demoInvoke(cmd, args = {}) {
     case 'album_page': return { uri: args.uri, name: 'cute album vol. 1', artists: [{ name: 'pastel kid', uri: 'spotify:artist:demo' }], year: 2025, image: demoCover(1, ''), tracks: DEMO_TRACKS.slice(0, 4) };
     case 'song_radio': return DEMO_TRACKS.slice().reverse();
     case 'set_saved': case 'playlist_add': case 'playlist_remove': case 'add_to_queue': case 'set_followed':
-    case 'playlist_rename': case 'playlist_unfollow': case 'clear_queue': return null;
+    case 'playlist_rename': case 'playlist_unfollow': case 'clear_queue': case 'dj_switch': return null;
     case 'playlist_create': return 'pl0';
     case 'collection_set': return [];
     case 'tracks_info': return DEMO_TRACKS.filter((t) => args.uris.includes(t.uri));

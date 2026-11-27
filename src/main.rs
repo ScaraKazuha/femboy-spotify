@@ -254,6 +254,12 @@ async fn tracks_info(state: State<'_, AppState>, uris: Vec<String>) -> CmdResult
     state.core().await?.api.tracks_by_uri(&uris).await.map_err(err)
 }
 
+/// DJ X "switch it up": skip to the DJ's next block.
+#[tauri::command]
+async fn dj_switch(state: State<'_, AppState>) -> CmdResult<()> {
+    state.core().await?.remote.dj_switch().await.map_err(err)
+}
+
 #[tauri::command]
 async fn clear_queue(state: State<'_, AppState>) -> CmdResult<()> {
     state.core().await?.remote.clear_queue().await.map_err(err)
@@ -779,6 +785,7 @@ fn main() {
             playlist_rename,
             playlist_unfollow,
             clear_queue,
+            dj_switch,
             tracks_info,
             lyrics,
             remote_state,
