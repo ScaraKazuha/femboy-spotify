@@ -4,7 +4,10 @@
   "version": "0.4.0",
   "identifier": "dev.scarakazuha.femboyspotify",
   "build": {
-    "frontendDist": "ui"
+    "frontendDist": "dist-ui",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeDevCommand": { "script": "trunk serve --port 1420", "cwd": "ui", "wait": false },
+    "beforeBuildCommand": { "script": "trunk build --release", "cwd": "ui" }
   },
   "app": {
     "withGlobalTauri": true,

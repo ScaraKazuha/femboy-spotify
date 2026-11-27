@@ -1,2 +1,6 @@
 /target
 /gen
+/dist-ui
+/ui/target
+/.claude
+/run-debug.cmd

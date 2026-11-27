@@ -41,10 +41,12 @@ From source:
 ```sh
 git clone https://github.com/ScaraKazuha/femboy-spotify
 cd femboy-spotify
-cargo run --release
+rustup target add wasm32-unknown-unknown   # the interface is Rust compiled to WebAssembly
+cargo install trunk tauri-cli --locked
+cargo tauri dev        # or: cargo tauri build (makes the installer)
 ```
 
-On first launch, click **sign in with Spotify**. Your browser opens the Spotify login page.
+On first launch, click **sign in with Spotify**. A Spotify sign-in window opens inside the app.
 After that, your login is saved (in your OS cache dir, `femboy-spotify/`), so next time the app starts right away.
 To log out, click the ribbon 🎀 at the bottom of the sidebar.
 
@@ -55,7 +57,7 @@ Spotify currently refuses to give audio decryption keys to [librespot](https://g
 [librespot#1649](https://github.com/librespot-org/librespot/issues/1649)).
 So the app carries Spotify's own web player in a hidden window (WebView2 has Edge's DRM built in).
 It shows up as a Spotify Connect device, and the app controls it, or any of your other devices,
-like the official "devices" menu does. The player needs its own Spotify sign-in once.
+like the official "devices" menu does. One sign-in covers both the app and the player.
 The terminal version still tries local playback with librespot and is affected by that issue.
 
 No developer account or Client ID is needed: your profile, playlists, liked songs,
@@ -82,15 +84,23 @@ cargo run --release --bin femboy-spotify-tui
 
 ## Hacking on the UI
 
-The interface is plain HTML/CSS/JS in [`ui/`](ui). Open `ui/index.html` through any local web server
-to get **demo mode** with fake data, no Spotify login needed. The Rust side lives in `src/`:
-`auth.rs` (login), `api.rs` (Spotify Web API + lyrics), `player.rs` (librespot playback), `main.rs` (Tauri commands).
+The interface is written in Rust too: [`ui/`](ui) is a small crate compiled to WebAssembly
+(wasm-bindgen + web-sys) that runs in the app's WebView, with `index.html` and `style.css` around it.
+Run `trunk serve` in `ui/` and open http://127.0.0.1:8080 to get **demo mode** with fake data,
+no Spotify login needed (`?shot` starts a song, `?theme=dark`, `?update`, `?noplayer`).
+
+- `ui/src/app.rs` what the interface does (pages, playback, devices, playlists, lyrics...)
+- `ui/src/views.rs` the HTML of each page, `ui/src/menu.rs` the pop-up menus, `ui/src/events.rs` the buttons
+- `ui/src/demo.rs` the pretend backend for demo mode
+
+The app's side lives in `src/`: `auth.rs` (login), `api.rs` (Spotify's internal services + lyrics),
+`remote.rs` (Spotify Connect), `main.rs` (Tauri commands, the built-in player window).
 
 ## По-русски
 
 Милый пастельно-розовый клиент Spotify на Rust: обложки, тексты песен, очередь, свой баннер.
-Нужен Spotify Premium. Запуск: `cargo run --release`. При первом запуске нажмите
-«sign in with Spotify», в браузере откроется вход в Spotify.
+Нужен Spotify Premium. Скачайте установщик из релизов (или соберите: `cargo tauri build`). При первом запуске нажмите
+«sign in with Spotify», внутри приложения откроется вход в Spotify. Интерфейс тоже на Rust (WebAssembly).
 
 ## Disclaimer
 

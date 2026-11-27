@@ -1,0 +1,5 @@
+# Builds the interface (Rust -> WebAssembly) and its assets into ../dist-ui,
+# which tauri.conf.json serves. `trunk serve` gives the demo mode in a browser.
+[build]
+target = "index.html"
+dist = "../dist-ui"

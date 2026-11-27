@@ -8,17 +8,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="style.css">
-  <script>
-    // pick the theme before the first paint (no flash of the light theme)
-    (function () {
-      var t = 'light';
-      try { t = JSON.parse(localStorage.getItem('theme')) || 'light'; } catch (e) {}
-      if (/[?&]theme=(light|dark)/.test(location.search)) t = location.search.match(/theme=(light|dark)/)[1]; // demo / screenshots
-      if (t === 'auto') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      document.documentElement.dataset.theme = t;
-    })();
-  </script>
+  <link data-trunk rel="css" href="style.css">
+  <link data-trunk rel="copy-dir" href="art">
+  <!-- the interface itself: Rust (src/), compiled to WebAssembly by Trunk -->
+  <link data-trunk rel="rust" href="Cargo.toml" data-bin="femboy-ui">
+  <style>html:not([data-theme]) body { visibility: hidden; }</style>
 </head>
 <body>
   <div id="app">
@@ -207,8 +201,5 @@
   </div>
 
   <div class="toast" id="toast"></div>
-
-  <script src="icons.js"></script>
-  <script src="app.js"></script>
 </body>
 </html>

@@ -1,0 +1,61 @@
+[package]
+name = "femboy-ui"
+version = "0.4.0"
+edition = "2024"
+description = "Femboy Spotify's interface, in Rust compiled to WebAssembly"
+publish = false
+
+# Built by Trunk (see Trunk.toml) into ../dist-ui, which Tauri serves.
+# Not part of the main crate's build: it targets wasm32-unknown-unknown.
+
+[dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde-wasm-bindgen = "0.6"
+gloo-timers = { version = "0.3", features = ["futures"] }
+futures-channel = "0.3"
+console_error_panic_hook = "0.1"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+  "AddEventListenerOptions",
+  "CanvasRenderingContext2d",
+  "CssStyleDeclaration",
+  "Document",
+  "DomRect",
+  "DomTokenList",
+  "Element",
+  "Event",
+  "EventTarget",
+  "File",
+  "FileList",
+  "FileReader",
+  "HtmlCanvasElement",
+  "HtmlElement",
+  "HtmlImageElement",
+  "HtmlInputElement",
+  "KeyboardEvent",
+  "Location",
+  "MediaQueryList",
+  "MouseEvent",
+  "MutationObserver",
+  "MutationObserverInit",
+  "MutationRecord",
+  "Node",
+  "NodeList",
+  "Performance",
+  "PointerEvent",
+  "ScrollBehavior",
+  "ScrollToOptions",
+  "Storage",
+  "Window",
+]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
