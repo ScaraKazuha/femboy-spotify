@@ -39,6 +39,10 @@ pub struct View {
     // recent
     pub cards: Option<Vec<Card>>,
     pub error: Option<String>,
+    // long lists: rows drawn (first, end), measured row height, the selected row
+    pub win: (usize, usize),
+    pub row_h: f64,
+    pub selected: Option<usize>,
 }
 
 impl View {

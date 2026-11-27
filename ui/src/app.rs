@@ -26,6 +26,7 @@ pub fn render() {
     let (back, fwd) = st(|s| (!s.back.is_empty(), !s.forward.is_empty()));
     set_style(&el("btn-back"), "opacity", if back { "1" } else { ".4" });
     set_style(&el("btn-forward"), "opacity", if fwd { "1" } else { ".4" });
+    fix_list_window();
 }
 
 pub fn go(view: View, push: bool) {
@@ -37,8 +38,8 @@ pub fn go(view: View, push: bool) {
         }
         s.view = view;
     });
-    render();
     main_el().set_scroll_top(0);
+    render();
 }
 
 pub fn go_home() {
@@ -1076,6 +1077,7 @@ fn play_with_radio(t: Track) {
 }
 
 pub fn select_row(i: usize) {
+    st(|s| s.view.selected = Some(i));
     let main = main_el();
     for r in query_all(&main, ".trow.selected") {
         remove_class(&r, "selected");
@@ -1087,20 +1089,62 @@ pub fn select_row(i: usize) {
 
 /// re-draws only the rows (keeps the search box focused while typing)
 pub fn refresh_rows() {
+    let ok = st(|s| {
+        if s.view.tracks.is_none() {
+            return false;
+        }
+        s.view.shown = Some(views::shown_tracks(&s.view));
+        true
+    });
+    if ok { draw_rows() } else { render() }
+}
+
+/// draws the rows of the list on screen again (same songs, same order)
+fn draw_rows() {
     let main = main_el();
     let Some(boxed) = query(&main, ".tracks") else { return render() };
     let html = st(|s| {
-        if s.view.tracks.is_none() {
-            return None;
-        }
-        let shown = views::shown_tracks(&s.view);
+        let shown = s.view.shown.take().unwrap_or_default();
         let html = views::rows_html(s, &shown);
         s.view.shown = Some(shown);
-        Some(html)
+        html
     });
-    let Some(html) = html else { return render() };
     boxed.set_outer_html(&html);
     hydrate(&main);
+    fix_list_window();
+}
+
+/// Long lists draw only the rows near the screen (a 500-song playlist would otherwise
+/// keep 2000+ pictures in memory). Called after drawing and while scrolling: moves
+/// the drawn part along when the screen gets near its edge.
+pub fn fix_list_window() {
+    let main = main_el();
+    let Some(top) = query(&main, ".tracks .trow-pad.top") else { return };
+    let rows = query_all(&main, ".tracks .trow[data-index]");
+    let measured = match (rows.first(), rows.get(1)) {
+        (Some(a), Some(b)) => b.get_bounding_client_rect().top() - a.get_bounding_client_rect().top(),
+        _ => 0.0,
+    };
+    let (len, win, old_h) = st(|s| (s.view.shown.as_ref().map(Vec::len).unwrap_or(0), s.view.win, s.view.row_h));
+    if len <= views::WINDOW_FROM {
+        return;
+    }
+    let old_h = if old_h > 0.0 { old_h } else { views::ROW_H };
+    let h = if measured > 10.0 { measured } else { old_h };
+    let screen = main.get_bounding_client_rect();
+    let start = top.get_bounding_client_rect().top();
+    let first = ((screen.top() - start) / h).floor().max(0.0) as usize;
+    let last = (((screen.bottom() - start) / h).ceil().max(0.0) as usize).min(len);
+    let (a, b) = if win.1 == 0 { (0, views::WINDOW_FIRST.min(len)) } else { (win.0, win.1.min(len)) };
+    let covered = a <= first.saturating_sub(8) && b >= (last + 8).min(len);
+    if covered && (h - old_h).abs() < 0.5 {
+        return;
+    }
+    st(|s| {
+        s.view.win = (first.saturating_sub(30), (last + 30).min(len));
+        s.view.row_h = h;
+    });
+    draw_rows();
 }
 
 // ---------- artist, album, radio, cards ----------

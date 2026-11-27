@@ -459,6 +459,26 @@ const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreen
      --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling \
      --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
 
+/// Runs in the player window. Nobody sees Spotify's web player there, yet it would
+/// draw ~200 animations at the screen's refresh rate, which costs a few hundred MB
+/// in WebView2's GPU process. On open.spotify.com every animation and transition is
+/// cut to 1 ms (so the ones the page waits for still finish and fire their events).
+/// Spotify's sign-in pages are on other hosts and keep theirs.
+const PLAYER_CALM: &str = r#"
+(() => {
+  if (location.hostname !== 'open.spotify.com') return;
+  const add = () => {
+    if (document.getElementById('femboy-calm')) return;
+    const s = document.createElement('style');
+    s.id = 'femboy-calm';
+    s.textContent = '*, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0s !important;'
+      + ' animation-iteration-count: 1 !important; transition-duration: 1ms !important; transition-delay: 0s !important; }';
+    (document.head || document.documentElement).append(s);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add();
+})();
+"#;
+
 /// Runs in the player window. On Spotify's home page it reads the playlist shelves
 /// ("Made For you", "Your top mixes", ...) from the page and hands them to the app
 /// through the page title in small pieces ("femboy-home:<i>/<n>:<piece>"), so the
@@ -596,6 +616,7 @@ fn player_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .skip_taskbar(true)
         .additional_browser_args(BROWSER_ARGS)
         .initialization_script(HOME_SCRAPER)
+        .initialization_script(PLAYER_CALM)
         .on_document_title_changed(|w, title| home_piece(w.app_handle(), &title))
         .on_navigation({
             let app = app.clone();

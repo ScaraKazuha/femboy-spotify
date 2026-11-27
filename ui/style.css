@@ -521,6 +521,9 @@ img { display: block; }
 .round-play:hover { transform: scale(1.07); }
 
 .tracks { padding: 0 24px; }
+/* long lists swap their drawn rows while scrolling; the browser must not "keep its
+   place" by moving the scroll position when that happens */
+#main { overflow-anchor: none; }
 .trow {
   display: grid;
   grid-template-columns: 40px minmax(0, 1.6fr) minmax(0, 1fr) 60px;
@@ -937,30 +940,29 @@ img { display: block; }
   height: calc(var(--w) * 36 / 46);
   background: var(--ear) center bottom / 100% 100% no-repeat;
   transform-origin: 50% 100%;
-  animation: ear-twitch 7s ease-in-out infinite;
 }
+/* a twitch now and then (the app adds .twitch for a moment). Not an endless CSS
+   animation: one of those keeps a layer alive in the GPU the whole time. */
+.ear.twitch { animation: ear-twitch .7s ease-in-out 1; }
 .ear.l { left: 9%; transform: skewX(var(--lean)); }
-.ear.r { right: 9%; transform: scaleX(-1) skewX(var(--lean)); animation-name: ear-twitch-r; animation-delay: .35s; }
+.ear.r { right: 9%; transform: scaleX(-1) skewX(var(--lean)); }
+.ear.r.twitch { animation-name: ear-twitch-r; animation-delay: .35s; }
 .ears-side .ear { --w: 20px; }
 .ears-side .ear.l { left: 16px; }
 .ears-side .ear.r { right: 16px; }
 .ears-main .ear { --w: 44px; }
 .ears-main .ear.l { left: 7%; }
 .ears-main .ear.r { right: 7%; }
-.ears-right .ear { animation-delay: 2.1s; }
-.ears-right .ear.r { animation-delay: 2.45s; }
-.ears-side .ear { animation-delay: 4.3s; }
-.ears-side .ear.r { animation-delay: 4.6s; }
 
 @keyframes ear-twitch {
-  0%, 90%, 100% { transform: skewX(var(--lean)); }
-  93% { transform: skewX(calc(var(--lean) + 16deg)) scaleY(.9); }
-  96% { transform: skewX(calc(var(--lean) - 5deg)) scaleY(1.03); }
+  0%, 100% { transform: skewX(var(--lean)); }
+  30% { transform: skewX(calc(var(--lean) + 16deg)) scaleY(.9); }
+  60% { transform: skewX(calc(var(--lean) - 5deg)) scaleY(1.03); }
 }
 @keyframes ear-twitch-r {
-  0%, 90%, 100% { transform: scaleX(-1) skewX(var(--lean)); }
-  93% { transform: scaleX(-1) skewX(calc(var(--lean) + 16deg)) scaleY(.9); }
-  96% { transform: scaleX(-1) skewX(calc(var(--lean) - 5deg)) scaleY(1.03); }
+  0%, 100% { transform: scaleX(-1) skewX(var(--lean)); }
+  30% { transform: scaleX(-1) skewX(calc(var(--lean) + 16deg)) scaleY(.9); }
+  60% { transform: scaleX(-1) skewX(calc(var(--lean) - 5deg)) scaleY(1.03); }
 }
 
 /* the pop-up cards get ears too */
@@ -980,7 +982,7 @@ img { display: block; }
 .card::after { right: 44px; transform: scaleX(-1) skewX(4deg); }
 
 @media (prefers-reduced-motion: reduce) {
-  .ear { animation: none; }
+  .ear, .ear.twitch { animation: none; }
 }
 .custom-card h2 { margin: 0 0 18px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-weight: 500; margin-bottom: 16px; }

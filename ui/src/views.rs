@@ -58,16 +58,42 @@ pub struct RowOpts {
     pub dates: bool,
     pub offset: usize,
     pub head: bool,
+    /// long lists draw only the rows near the screen: (first, end, row height);
+    /// the rest is empty space of the same height, so scrolling looks the same
+    pub window: Option<(usize, usize, f64)>,
+    pub selected: Option<usize>,
 }
 
 impl Default for RowOpts {
     fn default() -> Self {
-        RowOpts { album: true, dates: false, offset: 0, head: true }
+        RowOpts { album: true, dates: false, offset: 0, head: true, window: None, selected: None }
     }
 }
 
-pub fn row_opts(v: &View) -> RowOpts {
-    RowOpts { album: v.kind != "album", dates: v.kind == "liked" || v.kind == "playlist", ..Default::default() }
+/// Lists longer than this draw only the rows around what's on screen.
+pub const WINDOW_FROM: usize = 100;
+/// rows drawn when a long list opens (more than a tall screen shows)
+pub const WINDOW_FIRST: usize = 40;
+/// a row's height until the real one is measured
+pub const ROW_H: f64 = 60.0;
+
+pub fn row_opts(v: &View, len: usize) -> RowOpts {
+    let window = (len > WINDOW_FROM).then(|| {
+        let (a, b) = if v.win.1 == 0 { (0, WINDOW_FIRST) } else { v.win };
+        let b = b.min(len);
+        (a.min(b), b, if v.row_h > 0.0 { v.row_h } else { ROW_H })
+    });
+    RowOpts {
+        album: v.kind != "album",
+        dates: v.kind == "liked" || v.kind == "playlist",
+        window,
+        selected: v.selected,
+        ..Default::default()
+    }
+}
+
+fn pad(class: &str, rows: usize, h: f64) -> String {
+    format!(r#"<div class="trow-pad {class}" style="height:{}px"></div>"#, rows as f64 * h)
 }
 
 /// Song rows like Spotify's: ▶ on hover, liked mark, time, "•••".
@@ -84,7 +110,14 @@ pub fn tracks_html(s: &State, tracks: &[Track], o: &RowOpts) -> String {
             icon_cls("clock", "head-clock"),
         ));
     }
-    for (n, t) in tracks.iter().enumerate() {
+    let (first, end) = match o.window {
+        Some((a, b, h)) => {
+            html.push_str(&pad("top", a, h));
+            (a, b)
+        }
+        None => (0, tracks.len()),
+    };
+    for (n, t) in tracks.iter().enumerate().take(end).skip(first) {
         let i = n + o.offset;
         let playing = cur.as_deref() == Some(t.uri.as_str());
         let album_cell = match &t.album_uri {
@@ -92,7 +125,7 @@ pub fn tracks_html(s: &State, tracks: &[Track], o: &RowOpts) -> String {
             None => esc(&t.album),
         };
         html.push_str(&format!(
-            r#"<div class="trow {playing_cls}" data-index="{i}" data-n="{num}">
+            r#"<div class="trow {playing_cls}{selected_cls}" data-index="{i}" data-n="{num}">
         <div class="tnum"><span class="n">{numtxt}</span><button class="tplay" data-play="{i}" title="play {name}">{play}</button></div>
         <div class="tmain"><img src="{img}" alt="" loading="lazy"><div class="ttext"><div class="tname">{name}</div><div class="tartist">{artists}</div></div></div>
         {album}{date}{like}
@@ -100,6 +133,7 @@ pub fn tracks_html(s: &State, tracks: &[Track], o: &RowOpts) -> String {
         <button class="tmore" data-more="{i}" title="more options for {name}">{dots}</button>
       </div>"#,
             playing_cls = if playing { "playing" } else { "" },
+            selected_cls = if o.selected == Some(i) { " selected" } else { "" },
             num = n + 1,
             numtxt = if playing { "♪".to_string() } else { (n + 1).to_string() },
             name = esc(&t.name),
@@ -112,6 +146,9 @@ pub fn tracks_html(s: &State, tracks: &[Track], o: &RowOpts) -> String {
             dur = fmt(t.duration_ms),
             dots = icon("dots"),
         ));
+    }
+    if let Some((_, b, h)) = o.window {
+        html.push_str(&pad("bottom", tracks.len() - b, h));
     }
     html.push_str("</div>");
     html
@@ -194,7 +231,7 @@ pub fn rows_html(s: &State, shown: &[Track]) -> String {
     if shown.is_empty() {
         return r#"<div class="tracks"><div class="empty small">no songs match (｡•́︿•̀｡)</div></div>"#.into();
     }
-    tracks_html(s, shown, &row_opts(&s.view))
+    tracks_html(s, shown, &row_opts(&s.view, shown.len()))
 }
 
 // ---------- pages ----------
@@ -392,7 +429,7 @@ fn list_html(s: &State, v: &View) -> String {
         if shown.is_empty() {
             r#"<div class="tracks"><div class="empty small">no songs match (｡•́︿•̀｡)</div></div>"#.to_string()
         } else {
-            tracks_html(s, &shown, &row_opts(v))
+            tracks_html(s, &shown, &row_opts(v, shown.len()))
         }
     };
     let total: f64 = tracks.iter().map(|t| t.duration_ms).sum();

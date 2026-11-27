@@ -229,6 +229,13 @@ fn bind_main() {
             render();
         }
     });
+    // long lists draw the rows near the screen as it scrolls
+    let opts = web_sys::AddEventListenerOptions::new();
+    opts.set_passive(true);
+    let scroll = Closure::<dyn FnMut()>::new(fix_list_window);
+    let _ = main.add_event_listener_with_callback_and_add_event_listener_options("scroll", scroll.as_ref().unchecked_ref(), &opts);
+    scroll.forget();
+    on(&window(), "resize", |_| fix_list_window());
     on(&main, "contextmenu", |e| {
         let Some(row) = event_element(&e).and_then(|t| closest(&t, ".trow[data-index]")) else { return };
         e.prevent_default();
